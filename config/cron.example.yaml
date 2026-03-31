@@ -1,0 +1,12 @@
+# Cron jobs — copy to cron.yaml and customize
+cron:
+  timezone: "UTC"
+  jobs: []
+  # Example:
+  # - id: "morning-briefing"
+  #   schedule: "0 8 * * *"
+  #   agent: "personal"
+  #   topicId: 2
+  #   prompt: "Give me a morning briefing"
+  #   maxTurns: 10
+  #   enabled: true

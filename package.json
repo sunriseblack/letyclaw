@@ -1,0 +1,33 @@
+{
+  "name": "letyclaw",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "build:check": "tsc --noEmit",
+    "start": "node dist/bot.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.0",
+    "@anthropic-ai/sdk": "^0.52.0",
+    "@fastify/websocket": "^11.0.0",
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "better-sqlite3": "^12.8.0",
+    "fastify": "^5.3.0",
+    "js-yaml": "^4.1.0",
+    "node-cron": "^3.0.3",
+    "node-telegram-bot-api": "^0.66.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.5.0",
+    "@types/node-cron": "^3.0.11",
+    "@types/node-telegram-bot-api": "^0.64.14",
+    "@types/ws": "^8.18.1",
+    "typescript": "^6.0.2",
+    "vitest": "^3.2.4"
+  }
+}

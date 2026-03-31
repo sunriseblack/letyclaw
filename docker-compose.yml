@@ -1,0 +1,21 @@
+services:
+  letyclaw:
+    build: .
+    env_file: .env
+    volumes:
+      - ./vault:/data/vault
+      - ./sessions:/data/sessions
+      - ./config:/app/config
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  # Optional: persistent browser for web automation
+  # Uncomment if you enabled the browser integration
+  # playwright:
+  #   image: mcr.microsoft.com/playwright:v1.49.0-noble
+  #   command: npx @playwright/mcp@latest --headless --port 3100
+  #   ports:
+  #     - "3100:3100"
+  #   volumes:
+  #     - ./vault/browser-profiles:/data/browser-profiles
+  #   restart: unless-stopped

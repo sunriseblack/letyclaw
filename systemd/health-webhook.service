@@ -1,0 +1,15 @@
+[Unit]
+Description=Letyclaw Health Data Webhook
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/letyclaw
+ExecStart=node dist/services/health-webhook.js
+EnvironmentFile=/opt/letyclaw/.env
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

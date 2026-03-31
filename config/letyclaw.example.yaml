@@ -1,0 +1,49 @@
+# letyclaw config — copy to letyclaw.yaml and customize
+agents:
+  defaults:
+    maxTurns: 10
+    session:
+      ttlHours: 24
+      pruneAfterDays: 30
+    timeouts:
+      claudeTotal: 600000
+      claudeNoOutput: 180000
+    rateLimit:
+      maxRequests: 10
+      windowMs: 60000
+
+  list:
+    - id: personal
+      name: "Personal"
+      maxTurns: 50
+
+    - id: work
+      name: "Work"
+      maxTurns: 50
+
+    - id: health
+      name: "Health"
+      maxTurns: 10
+
+    - id: finance
+      name: "Finance"
+      maxTurns: 10
+
+channels:
+  telegram:
+    token:
+      secretRef: telegram_bot_token
+    chatId: YOUR_GROUP_ID_HERE
+    accounts:
+      - id: main
+        allowFrom:
+          - YOUR_USER_ID_HERE
+    routing:
+      - agent: personal
+        threadId: 2
+      - agent: work
+        threadId: 3
+      - agent: health
+        threadId: 4
+      - agent: finance
+        threadId: 5

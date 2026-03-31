@@ -1,0 +1,7 @@
+[Unit]
+Description=Daily Vault Backup
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/letyclaw/scripts/vault-backup.sh

@@ -1,0 +1,18 @@
+[Unit]
+Description=Letyclaw Voice Relay (Twilio ConversationRelay <-> Claude API)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/letyclaw
+ExecStart=node dist/services/voice-relay.js
+Restart=always
+RestartSec=10
+Environment=NODE_ENV=production
+Environment=HOME=/root
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/opt/letyclaw/.env
+
+[Install]
+WantedBy=multi-user.target

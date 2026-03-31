@@ -1,0 +1,39 @@
+{
+  "mcpServers": {
+    "letyclaw-tools": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["dist/tools/letyclaw-mcp/server.js"],
+      "env": {
+        "LETYCLAW_VAULT_PATH": "${VAULT_PATH}",
+        "LETYCLAW_SESSIONS_DIR": "${SESSIONS_DIR}",
+        "LETYCLAW_PROJECT_ROOT": "${LETYCLAW_PROJECT_ROOT}",
+        "LETYCLAW_CRON_CONFIG": "${LETYCLAW_CRON_CONFIG}"
+      }
+    },
+    "email": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@codefuturist/email-mcp", "stdio"]
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest",
+        "--headless",
+        "--user-data-dir", "${VAULT_PATH}/browser-profiles"
+      ]
+    },
+    "fli": {
+      "type": "stdio",
+      "command": "fli-mcp",
+      "args": []
+    },
+    "alphavantage": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["--from", "marketdata-mcp-server", "marketdata-mcp", "${ALPHA_VANTAGE_API_KEY:-}"]
+    }
+  }
+}

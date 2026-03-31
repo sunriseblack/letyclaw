@@ -1,0 +1,35 @@
+# Secrets
+.env
+.env.*
+!.env.example
+*.secret
+workspaces.json
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Vault content (never commit)
+vault/
+
+# Backups
+*.tar.gz
+.claude/settings.local.json
+
+# Runtime logs
+logs/
+
+# TypeScript build output
+dist/
+*.tsbuildinfo
+
+# User config (only .example.yaml files are committed)
+config/letyclaw.yaml
+config/cron.yaml

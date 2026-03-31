@@ -1,0 +1,33 @@
+[Unit]
+Description=Letyclaw Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=letyclaw
+WorkingDirectory=/opt/letyclaw
+
+# Secrets loaded from restricted file (mode 600, root-owned)
+EnvironmentFile=/etc/letyclaw/env
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+
+# Ensure letyclaw owns vault workspaces
+ExecStartPre=+/usr/bin/find /opt/letyclaw/vault -not -user letyclaw -exec chown letyclaw:letyclaw {} +
+
+ExecStart=node dist/bot.js
+Restart=always
+RestartSec=5
+
+# Filesystem sandboxing
+TemporaryFileSystem=/root
+BindPaths=/opt/letyclaw/vault /opt/letyclaw/sessions /opt/letyclaw/logs
+BindReadOnlyPaths=/opt/letyclaw
+ReadWritePaths=/home/letyclaw/.claude
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

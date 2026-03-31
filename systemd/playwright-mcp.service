@@ -1,0 +1,26 @@
+[Unit]
+Description=Playwright MCP Server (persistent browser)
+After=network.target
+
+[Service]
+Type=simple
+User=letyclaw
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=HOME=/home/letyclaw
+
+ExecStart=npx @playwright/mcp@latest \
+  --headless \
+  --port 3100 \
+  --host 127.0.0.1 \
+  --user-data-dir /opt/letyclaw/vault/browser-profiles
+
+Restart=always
+RestartSec=5
+
+# Sandboxing
+BindPaths=/opt/letyclaw/vault
+ReadWritePaths=/home/letyclaw/.cache /home/letyclaw/.npm
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
