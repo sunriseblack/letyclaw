@@ -143,7 +143,15 @@ Telegram Message → bot.ts → Route by topic ID → Agent config
                                               • Browser (Playwright)
                                                      ↓
                                               Response → Telegram
+
+Obsidian app ←→ Obsidian Sync ←→ obsidian-headless (VPS) ←→ /root/vault/
 ```
+
+### Obsidian Vault
+
+The vault (`VAULT_PATH`) is an [Obsidian](https://obsidian.md/) vault. Agent memory files are Obsidian-compatible markdown (daily notes with `## HH:MM` headers), so you can browse and edit them directly in the Obsidian app on any device. The SQLite FTS5 search index is built on top of these same files.
+
+On the VPS, [obsidian-headless](https://github.com/nichochar/obsidian-headless) keeps the vault in sync via Obsidian Sync. See [DEPLOY.md](DEPLOY.md) for setup instructions.
 
 ### Key Files
 

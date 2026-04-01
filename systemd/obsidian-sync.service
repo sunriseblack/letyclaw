@@ -1,0 +1,20 @@
+[Unit]
+Description=Obsidian Headless — vault sync via Obsidian Sync
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment=OBSIDIAN_VAULT_PATH=/root/vault
+ExecStart=/usr/bin/obsidian-headless --vault /root/vault
+Restart=on-failure
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/root/vault
+
+[Install]
+WantedBy=multi-user.target

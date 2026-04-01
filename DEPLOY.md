@@ -25,6 +25,108 @@ CLAUDE_MODEL=claude-sonnet-4-6
 # ALPHA_VANTAGE_API_KEY=
 ```
 
+## Obsidian Vault Setup
+
+The vault directory (`VAULT_PATH`) is an [Obsidian](https://obsidian.md/) vault. Agent memory files are stored as Obsidian-compatible markdown (daily notes with `## HH:MM` headers), and the SQLite FTS5 search index is built on top of these same files. This means you can browse and edit agent memories directly in the Obsidian app on any device.
+
+### Stack
+
+```
+Obsidian app (phone/desktop) ←→ Obsidian Sync cloud ←→ obsidian-headless (VPS)
+                                                              ↓
+                                                        /root/vault/
+                                                              ↓
+                                                        Letyclaw bot
+                                                        (reads/writes .md files,
+                                                         SQLite FTS5 index)
+```
+
+### Setting up Obsidian Sync on the VPS
+
+1. **Create the vault in Obsidian** on your local device and enable Obsidian Sync (requires an Obsidian subscription).
+
+2. **Install obsidian-headless** on the VPS:
+
+   ```bash
+   # Install obsidian-headless (headless Obsidian client for sync)
+   # See: https://github.com/nichochar/obsidian-headless
+   npm install -g obsidian-headless
+   ```
+
+3. **Authenticate and initialize the vault:**
+
+   ```bash
+   mkdir -p /root/vault
+   obsidian-headless --vault /root/vault
+   # Follow the prompts to log in with your Obsidian account
+   # and select the remote vault to sync
+   # Ctrl+C once initial sync completes
+   ```
+
+4. **Install the systemd service:**
+
+   ```bash
+   sudo cp systemd/obsidian-sync.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable obsidian-sync
+   sudo systemctl start obsidian-sync
+   ```
+
+5. **Verify sync is running:**
+
+   ```bash
+   systemctl status obsidian-sync
+   ls /root/vault/   # Should show your vault contents
+   ```
+
+6. **Set `VAULT_PATH`** in your env file:
+
+   ```bash
+   # In /etc/letyclaw/env
+   VAULT_PATH=/root/vault
+   ```
+
+### Vault structure
+
+Letyclaw creates per-agent directories inside the vault:
+
+```
+/root/vault/
+├── personal/
+│   ├── memory/
+│   │   ├── 2026-03-28.md      # Daily memory notes (## HH:MM entries)
+│   │   ├── 2026-03-29.md
+│   │   └── search.sqlite      # FTS5 search index (auto-generated, not synced)
+│   ├── AGENTS.md               # Agent identity/instructions
+│   └── TOOLS.md                # Tool documentation
+├── work/
+│   ├── memory/
+│   │   └── ...
+│   └── AGENTS.md
+└── ...
+```
+
+### .obsidianignore
+
+Add a `.obsidianignore` file at the vault root to exclude non-markdown files from Obsidian Sync:
+
+```
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+```
+
+### Backup
+
+The vault is backed up independently via `vault-backup.service` (daily tarball, 30-day retention). This is separate from Obsidian Sync and acts as a safety net.
+
+```bash
+sudo cp systemd/vault-backup.service systemd/vault-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable vault-backup.timer
+sudo systemctl start vault-backup.timer
+```
+
 ## First-Time Deployment
 
 ```bash
