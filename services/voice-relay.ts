@@ -227,11 +227,6 @@ app.register(async function (fastify) {
             } catch { /* ignore */ }
           }, maxSec * 1000);
 
-          // Send first sentence if configured
-          if (call.system_prompt && call.system_prompt.includes("first_sentence:")) {
-            // first_sentence is handled by ConversationRelay config, not here
-          }
-
           break;
         }
 

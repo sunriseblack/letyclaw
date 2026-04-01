@@ -131,7 +131,9 @@ export function updateCallStatus(callSid: string, status: string, extra: Record<
     vals.push(Date.now());
   }
 
+  const ALLOWED_COLUMNS = new Set(["duration_seconds", "connected_at", "completed_at", "error", "summary"]);
   for (const [key, val] of Object.entries(extra)) {
+    if (!ALLOWED_COLUMNS.has(key)) continue;
     sets.push(`${key} = ?`);
     vals.push(val);
   }
@@ -142,10 +144,8 @@ export function updateCallStatus(callSid: string, status: string, extra: Record<
 
 export function appendTranscript(callSid: string, speaker: string, text: string): void {
   const db = getDb();
-  const row = db.prepare<[string], Pick<CallRow, "transcript">>("SELECT transcript FROM calls WHERE call_sid = ?").get(callSid);
-  if (!row) return;
-  const updated = (row.transcript || "") + `[${speaker}]: ${text}\n`;
-  db.prepare("UPDATE calls SET transcript = ? WHERE call_sid = ?").run(updated, callSid);
+  const line = `[${speaker}]: ${text}\n`;
+  db.prepare("UPDATE calls SET transcript = transcript || ? WHERE call_sid = ?").run(line, callSid);
 }
 
 export function getCall(callSid: string): CallRow | null {

@@ -5,20 +5,12 @@
  * Jobs are stored in config/cron.yaml and executed by cron.js.
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
+import YAML from "js-yaml";
 import { ok, error, AGENT } from "./_util.js";
 import type { MCPToolDefinition, MCPResponse } from "../types.js";
 
 const CRON_CONFIG = (): string => process.env.LETYCLAW_CRON_CONFIG || join(process.env.LETYCLAW_PROJECT_ROOT || process.cwd(), "config", "cron.yaml");
-
-// ── Simple YAML parser/serializer for cron.yaml ──────────────────────
-// cron.yaml format:
-//   jobs:
-//     - id: daily-standup
-//       schedule: "0 9 * * *"
-//       agent: personal
-//       prompt: "Give me a morning briefing"
-//       enabled: true
 
 interface CronJob {
   id: string;
@@ -30,65 +22,25 @@ interface CronConfig {
   jobs: CronJob[];
 }
 
+interface RawCronYaml {
+  cron?: { timezone?: string; jobs?: CronJob[] };
+}
+
 function loadCronConfig(): CronConfig {
   const configPath = CRON_CONFIG();
   if (!existsSync(configPath)) return { jobs: [] };
-  const raw = readFileSync(configPath, "utf8");
-  return parseSimpleYaml(raw);
+  const raw = YAML.load(readFileSync(configPath, "utf8")) as RawCronYaml | null;
+  return {
+    timezone: raw?.cron?.timezone || process.env.TZ || "UTC",
+    jobs: raw?.cron?.jobs ?? [],
+  };
 }
 
 function saveCronConfig(config: CronConfig): void {
   const configPath = CRON_CONFIG();
-  // Ensure parent directory exists
-  const dir = configPath.replace(/\/[^/]+$/, "");
-  if (dir && !existsSync(dir)) mkdirSync(dir, { recursive: true });
-  const yaml = serializeSimpleYaml(config);
+  mkdirSync(dirname(configPath), { recursive: true });
+  const yaml = YAML.dump({ cron: { timezone: config.timezone || "UTC", jobs: config.jobs } }, { lineWidth: 120, noRefs: true });
   writeFileSync(configPath, yaml);
-}
-
-function parseSimpleYaml(text: string): CronConfig {
-  const jobs: CronJob[] = [];
-  let timezone = process.env.TZ || "UTC";
-  let current: CronJob | null = null;
-
-  for (const line of text.split("\n")) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith("timezone:")) {
-      timezone = trimmed.replace("timezone:", "").trim().replace(/^"|"$/g, "");
-      continue;
-    }
-    if (trimmed === "cron:" || trimmed === "jobs:" || trimmed === "jobs: []") continue;
-    if (trimmed.startsWith("- id:")) {
-      if (current) jobs.push(current);
-      current = { id: trimmed.replace("- id:", "").trim().replace(/^"|"$/g, "") };
-    } else if (current && trimmed.includes(":")) {
-      const colonIdx = trimmed.indexOf(":");
-      const key = trimmed.slice(0, colonIdx).trim();
-      const rawVal = trimmed.slice(colonIdx + 1).trim().replace(/^"|"$/g, "");
-      let val: string | boolean | number = rawVal;
-      if (rawVal === "true") val = true;
-      else if (rawVal === "false") val = false;
-      else if (/^\d+$/.test(rawVal)) val = Number(rawVal);
-      current[key] = val;
-    }
-  }
-  if (current) jobs.push(current);
-  return { timezone, jobs };
-}
-
-function serializeSimpleYaml(config: CronConfig): string {
-  const tz = config.timezone || process.env.TZ || "UTC";
-  if (!config.jobs || config.jobs.length === 0) return `cron:\n  timezone: "${tz}"\n  jobs: []\n`;
-  let yaml = `cron:\n  timezone: "${tz}"\n  jobs:\n`;
-  for (const job of config.jobs) {
-    yaml += `    - id: "${job.id}"\n`;
-    for (const [key, val] of Object.entries(job)) {
-      if (key === "id") continue;
-      const v = typeof val === "string" ? `"${val}"` : val;
-      yaml += `      ${key}: ${v}\n`;
-    }
-  }
-  return yaml;
 }
 
 // ── Tool definitions ──────────────────────────────────────────────────

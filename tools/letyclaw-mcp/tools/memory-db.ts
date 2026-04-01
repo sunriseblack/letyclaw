@@ -8,7 +8,7 @@
 import Database from "better-sqlite3";
 import { spawn } from "child_process";
 import { createHash } from "crypto";
-import { readFileSync, readdirSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, readdirSync, existsSync, mkdirSync, statSync } from "fs";
 import { join, basename } from "path";
 import { VAULT } from "./_util.js";
 
@@ -61,7 +61,8 @@ export function getDb(agentId: string): Database.Database {
     CREATE TABLE IF NOT EXISTS files (
       path TEXT PRIMARY KEY,
       hash TEXT,
-      updated_at INTEGER
+      updated_at INTEGER,
+      mtime_ms INTEGER DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS chunks (
@@ -96,6 +97,13 @@ export function getDb(agentId: string): Database.Database {
       VALUES (new.id, new.text, new.expanded);
     END;
   `);
+
+  // Migration: add mtime_ms column if missing (existing DBs)
+  try {
+    db.prepare("SELECT mtime_ms FROM files LIMIT 0").run();
+  } catch {
+    db.exec("ALTER TABLE files ADD COLUMN mtime_ms INTEGER DEFAULT 0");
+  }
 
   dbCache.set(dbPath, db);
   return db;
@@ -175,11 +183,12 @@ function hashText(text: string): string {
 
 // ── Indexing ─────────────────────────────────────────────────────────
 
-export async function indexFile(agentId: string, filePath: string): Promise<void> {
+export async function indexFile(agentId: string, filePath: string, preloadedContent?: string): Promise<void> {
   const db = getDb(agentId);
-  const content = readFileSync(filePath, "utf8");
+  const content = preloadedContent ?? readFileSync(filePath, "utf8");
   const fileHash = hashText(content);
   const relPath = basename(filePath);
+  const mtimeMs = statSync(filePath).mtimeMs;
 
   // Skip if unchanged
   const existing = db.prepare<[string], FileRow>("SELECT hash FROM files WHERE path = ?").get(relPath);
@@ -205,7 +214,7 @@ export async function indexFile(agentId: string, filePath: string): Promise<void
   }
 
   // Update file tracking
-  db.prepare("INSERT OR REPLACE INTO files (path, hash, updated_at) VALUES (?, ?, ?)").run(relPath, fileHash, Date.now());
+  db.prepare("INSERT OR REPLACE INTO files (path, hash, updated_at, mtime_ms) VALUES (?, ?, ?, ?)").run(relPath, fileHash, Date.now(), mtimeMs);
 }
 
 export function removeFile(agentId: string, filePath: string): void {
@@ -224,16 +233,17 @@ export async function ensureIndex(agentId: string): Promise<void> {
   const db = getDb(agentId);
   const mdFiles = readdirSync(dir).filter((f) => f.endsWith(".md"));
 
-  // Index new or changed files
+  // Index new or changed files — use mtime as fast pre-check to avoid reading unchanged files
   for (const file of mdFiles) {
     const filePath = join(dir, file);
+    const mtimeMs = statSync(filePath).mtimeMs;
+
+    const existing = db.prepare<[string], FileRow & { mtime_ms?: number }>("SELECT hash, mtime_ms FROM files WHERE path = ?").get(file);
+    if (existing && existing.mtime_ms === mtimeMs) continue;
+
+    // mtime changed (or new file) — read content and re-index
     const content = readFileSync(filePath, "utf8");
-    const fileHash = hashText(content);
-
-    const existing = db.prepare<[string], FileRow>("SELECT hash FROM files WHERE path = ?").get(file);
-    if (existing?.hash === fileHash) continue;
-
-    await indexFile(agentId, filePath);
+    await indexFile(agentId, filePath, content);
   }
 
   // Remove entries for deleted files

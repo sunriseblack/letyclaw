@@ -8,6 +8,7 @@
  */
 import { readFileSync, writeFileSync, readdirSync, existsSync } from "fs";
 import { join } from "path";
+import YAML from "js-yaml";
 import type { MCPToolDefinition, MCPHandler, MCPResponse } from "../types.js";
 import { ok, error, VAULT, AGENT, TOPIC, SESSIONS_DIR, safePath } from "./_util.js";
 
@@ -144,22 +145,8 @@ export const handlers: Record<string, MCPHandler> = {
     }
 
     try {
-      const raw = readFileSync(nodesConfig, "utf8");
-      // Simple parse
-      const nodes: Record<string, string>[] = [];
-      let current: Record<string, string> | null = null;
-      for (const line of raw.split("\n")) {
-        const trimmed = line.trim();
-        if (trimmed.startsWith("- id:")) {
-          if (current) nodes.push(current);
-          current = { id: trimmed.replace("- id:", "").trim() };
-        } else if (current && trimmed.includes(":")) {
-          const [k, ...v] = trimmed.split(":");
-          current[k!.trim()] = v.join(":").trim();
-        }
-      }
-      if (current) nodes.push(current);
-
+      const raw = YAML.load(readFileSync(nodesConfig, "utf8")) as { nodes?: Record<string, string>[] } | null;
+      const nodes = raw?.nodes ?? [];
       const filtered = type ? nodes.filter((n) => n.type === type) : nodes;
       return ok(JSON.stringify(filtered, null, 2));
     } catch (err) {

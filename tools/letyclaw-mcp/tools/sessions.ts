@@ -31,6 +31,20 @@ interface SubagentEntry {
 
 const subagents = new Map<string, SubagentEntry>();
 let subagentCounter = 0;
+const SUBAGENT_MAX_AGE_MS = 30 * 60 * 1000; // prune after 30 minutes
+
+function pruneSubagents(): void {
+  const cutoff = Date.now() - SUBAGENT_MAX_AGE_MS;
+  for (const [id, entry] of subagents) {
+    if (entry.status !== "running" && (entry.finishedAt || 0) < cutoff) {
+      subagents.delete(id);
+    }
+  }
+}
+
+function sessionFile(agentId: string, topicId: string): string {
+  return join(SESSIONS_DIR(), `${agentId}-topic-${topicId}.json`);
+}
 
 // ── Tool definitions ──────────────────────────────────────────────────
 
@@ -165,7 +179,7 @@ export const handlers: Record<string, (args: Record<string, unknown>) => Promise
   },
 
   async sessions_history({ agent_id, topic_id }: Record<string, unknown>): Promise<MCPResponse> {
-    const file = join(SESSIONS_DIR(), `${agent_id}-topic-${topic_id}.json`);
+    const file = sessionFile(agent_id as string, topic_id as string);
     if (!existsSync(file)) return error(`No session file for ${agent_id}/topic-${topic_id}`);
 
     const data = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
@@ -298,6 +312,7 @@ export const handlers: Record<string, (args: Record<string, unknown>) => Promise
   },
 
   async subagents(): Promise<MCPResponse> {
+    pruneSubagents();
     if (subagents.size === 0) return ok("No sub-agents have been spawned");
 
     const list: Record<string, unknown>[] = [];
@@ -319,7 +334,7 @@ export const handlers: Record<string, (args: Record<string, unknown>) => Promise
   },
 
   async session_status({ agent_id, topic_id }: Record<string, unknown>): Promise<MCPResponse> {
-    const file = join(SESSIONS_DIR(), `${agent_id}-topic-${topic_id}.json`);
+    const file = sessionFile(agent_id as string, topic_id as string);
     if (!existsSync(file)) return error(`No session for ${agent_id}/topic-${topic_id}`);
 
     const data = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;

@@ -22,7 +22,6 @@ import {
   saveSession,
   shouldRotateSession,
   lookupSessionByMessageId,
-  createSession,
   pruneOldSessions as _pruneOldSessions,
   buildTopicPrompt,
   isSessionExpiredError,
@@ -204,18 +203,14 @@ async function runClaude(
   const cwd = VAULT_PATH;
   const agentEnv = { LETYCLAW_AGENT_ID: agentId, LETYCLAW_TOPIC_ID: String(topicId || "") };
 
+  const makeArgs = (p: string, resumeId?: string): string[] => {
+    const a = ["-p", p, "--model", MODEL, "--output-format", "stream-json", "--verbose", "--max-turns", String(maxTurns), "--dangerously-skip-permissions"];
+    if (resumeId) a.push("--resume", resumeId);
+    return a;
+  };
+
   const prompt = resumeSessionId ? userMessage : buildTopicPrompt(agentId, topicId, userMessage);
-
-  const baseArgs = [
-    "-p", prompt,
-    "--model", MODEL,
-    "--output-format", "stream-json",
-    "--verbose",
-    "--max-turns", String(maxTurns),
-    "--dangerously-skip-permissions",
-  ];
-
-  const args = resumeSessionId ? [...baseArgs, "--resume", resumeSessionId] : [...baseArgs];
+  const args = makeArgs(prompt, resumeSessionId);
 
   let result: ClaudeProcessResult;
   let effectiveResumeSessionId = resumeSessionId;
@@ -224,17 +219,7 @@ async function runClaude(
   } catch (err) {
     if (effectiveResumeSessionId) {
       console.log(`[${agentId}] session failed (${err instanceof Error ? err.message : String(err)}), retrying fresh`);
-      const freshPrompt = buildTopicPrompt(agentId, topicId, userMessage);
-      const freshArgs = [
-        "-p", freshPrompt,
-        "--model", MODEL,
-        "--output-format", "stream-json",
-        "--verbose",
-        "--max-turns", String(maxTurns),
-        "--dangerously-skip-permissions",
-      ];
-      result = await runClaudeProcess(cwd, freshArgs, agentEnv);
-      // Clear the resume so we don't try to save to the old session
+      result = await runClaudeProcess(cwd, makeArgs(buildTopicPrompt(agentId, topicId, userMessage)), agentEnv);
       effectiveResumeSessionId = undefined;
     } else {
       throw err;
@@ -243,16 +228,7 @@ async function runClaude(
 
   if (effectiveResumeSessionId && (result.code !== 0 || isSessionExpiredError(result.stdout, result.stderr))) {
     console.log(`[${agentId}] session expired, retrying fresh`);
-    const freshPrompt = buildTopicPrompt(agentId, topicId, userMessage);
-    const freshArgs = [
-      "-p", freshPrompt,
-      "--model", MODEL,
-      "--output-format", "stream-json",
-      "--verbose",
-      "--max-turns", String(maxTurns),
-      "--dangerously-skip-permissions",
-    ];
-    result = await runClaudeProcess(cwd, freshArgs, agentEnv);
+    result = await runClaudeProcess(cwd, makeArgs(buildTopicPrompt(agentId, topicId, userMessage)), agentEnv);
     effectiveResumeSessionId = undefined;
   }
 
@@ -274,7 +250,7 @@ async function runClaude(
 // --- Telegram bot ---
 const bot = new TelegramBot(BOT_TOKEN!, { polling: true });
 
-const processedMessages = new Map<string, number>();
+const processedMessages = new Map<number, number>();
 
 setInterval(() => {
   const cutoff = Date.now() - 300000;
@@ -319,9 +295,8 @@ bot.on("message", async (msg: TelegramBot.Message) => {
     return;
   }
 
-  const msgKey = `${msg.message_id}`;
-  if (processedMessages.has(msgKey)) return;
-  processedMessages.set(msgKey, Date.now());
+  if (processedMessages.has(msg.message_id)) return;
+  processedMessages.set(msg.message_id, Date.now());
 
   let text: string | undefined = msg.text;
 
@@ -438,18 +413,16 @@ async function processMessage(
     const responseStr = typeof result.text === "string" ? result.text : JSON.stringify(result.text);
     const sentIds = await sendToTopic(topicId, responseStr);
 
-    // Map both user message and bot response message IDs to this session (single read/write)
+    // Map both user message and bot response message IDs to this session
     if (result.sessionId) {
-      let session: SessionData | null = mode === "fresh"
-        ? createSession(SESSIONS_DIR, UNIFIED_AGENT, topicId)
-        : loadSession(SESSIONS_DIR, UNIFIED_AGENT, topicId);
-      if (session) {
-        session.currentSessionId = result.sessionId;
-        for (const id of [msg.message_id, ...sentIds]) {
-          session.messageMap[String(id)] = result.sessionId;
-        }
-        saveSession(SESSIONS_DIR, UNIFIED_AGENT, topicId, session);
+      const existing = loadSession(SESSIONS_DIR, UNIFIED_AGENT, topicId);
+      const session: SessionData = mode === "fresh"
+        ? { currentSessionId: result.sessionId, createdAt: Date.now(), messageMap: existing?.messageMap || {} }
+        : { ...(existing || { currentSessionId: null, createdAt: Date.now(), messageMap: {} }), currentSessionId: result.sessionId };
+      for (const id of [msg.message_id, ...sentIds]) {
+        session.messageMap[String(id)] = result.sessionId;
       }
+      saveSession(SESSIONS_DIR, UNIFIED_AGENT, topicId, session);
     }
 
     logEntry(agent.id, topicId, { event: "response", elapsed, sessionId: result.sessionId, responseLen: responseStr.length });

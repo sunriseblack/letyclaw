@@ -6,11 +6,7 @@ export interface AgentConfig {
   maxTurns: number;
 }
 
-export interface RoutingEntry {
-  id: string;
-  name: string;
-  maxTurns: number;
-}
+export type RoutingEntry = AgentConfig;
 
 export interface SessionConfig {
   ttlHours: number;
@@ -73,12 +69,6 @@ export interface SessionData {
 }
 
 // ── Claude output types ──────────────────────────────────────────────
-
-export interface ClaudeStreamOutput {
-  code: number;
-  stdout: string;
-  stderr: string;
-}
 
 export interface ParsedClaudeResult {
   sessionId: string | undefined;

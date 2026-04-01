@@ -1,17 +1,5 @@
 import cron from "node-cron";
-import type { LoadedConfig } from "./types.js";
-
-type RunClaudeFn = (
-  agentId: string,
-  topicId: number,
-  prompt: string,
-  opts?: { maxTurns?: number },
-) => Promise<string>;
-
-type SendToTopicFn = (
-  topicId: number,
-  text: string,
-) => Promise<number[]>;
+import type { LoadedConfig, RunClaudeFn, SendToTopicFn } from "./types.js";
 
 export function startCronJobs(config: LoadedConfig, runClaude: RunClaudeFn, sendToTopic: SendToTopicFn): () => void {
   const { timezone, jobs } = config.cron;
