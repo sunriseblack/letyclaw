@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Opening in Obsidian…</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font: 17px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      margin: 0; min-height: 100vh; box-sizing: border-box;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 1.25rem; padding: 2rem; text-align: center;
+    }
+    .muted { opacity: .55; font-size: 15px; }
+    a.btn {
+      display: inline-block; padding: .85em 1.6em; border-radius: 12px;
+      background: #7c3aed; color: #fff; text-decoration: none; font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <p>📖 Opening your note in Obsidian…</p>
+  <p><a id="open" class="btn" href="#">Tap to open</a></p>
+  <p class="muted" id="hint"></p>
+  <script>
+    (function () {
+      var p = new URLSearchParams(location.search);
+      var vault = p.get("vault") || "ObsidianVault";
+      var file = p.get("file") || "";
+      var target = "obsidian://open?vault=" + encodeURIComponent(vault) +
+                   "&file=" + encodeURIComponent(file);
+      document.getElementById("open").href = target;
+      document.getElementById("hint").textContent =
+        file ? file : "No note specified.";
+      // Auto-attempt the hand-off. iOS may gate this behind a user gesture, so
+      // the visible "Tap to open" button above is the guaranteed fallback.
+      if (file) { try { location.replace(target); } catch (e) {} }
+    })();
+  </script>
+</body>
+</html>

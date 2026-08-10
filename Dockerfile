@@ -1,36 +1,53 @@
-FROM node:22-slim
+FROM node:22-slim AS build
 
-# System dependencies for optional integrations
+# Native dependencies such as better-sqlite3 may need a compiler when a
+# matching prebuilt binary is unavailable.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    imagemagick \
-    curl \
-    ca-certificates \
+    build-essential \
+    python3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Claude Code CLI
-RUN npm install -g @anthropic-ai/claude-code
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+
+# Copy only build inputs; local config, vault data, and secrets are excluded.
+COPY tsconfig.json ./*.ts ./
+COPY services/ ./services/
+COPY scripts/ ./scripts/
+COPY tools/ ./tools/
+RUN npm run build && npm prune --omit=dev
+
+FROM node:22-slim AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    ffmpeg \
+    imagemagick \
+    && rm -rf /var/lib/apt/lists/* \
+    && npm install -g @anthropic-ai/claude-code
 
 WORKDIR /app
-
-# Install dependencies
 COPY package*.json ./
-RUN npm ci --production
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/dist ./dist
+COPY config/*.example.yaml ./config/
+COPY agents/templates/ ./agents/templates/
+COPY agents/shared/ ./agents/shared/
+COPY agents/examples/ ./agents/examples/
 
-# Copy source
-COPY . .
+# Register only the bundled local server. Optional browser/email/flight/market
+# MCPs require separate host setup and are deliberately not pulled from latest.
+RUN claude mcp add --scope user --transport stdio letyclaw-tools -- \
+    node /app/dist/tools/letyclaw-mcp/server.js
 
-# Build TypeScript
-RUN npm run build
+RUN mkdir -p /data/vault /data/sessions /app/logs
 
-# Data volumes
-VOLUME /data/vault
-VOLUME /data/sessions
-
-ENV VAULT_PATH=/data/vault
-ENV SESSIONS_DIR=/data/sessions
-ENV LETYCLAW_PROJECT_ROOT=/app
-
-EXPOSE 3100
+VOLUME ["/data/vault", "/data/sessions"]
+ENV VAULT_PATH=/data/vault \
+    SESSIONS_DIR=/data/sessions \
+    LETYCLAW_PROJECT_ROOT=/app \
+    NODE_ENV=production
 
 CMD ["node", "dist/bot.js"]

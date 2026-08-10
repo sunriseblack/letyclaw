@@ -6,11 +6,12 @@
  * - self_info: Current agent context introspection
  * - cross_agent_read: Read another agent's memory or workspace files
  */
-import { readFileSync, writeFileSync, readdirSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, readdirSync, existsSync, realpathSync } from "fs";
 import { join } from "path";
 import YAML from "js-yaml";
 import type { MCPToolDefinition, MCPHandler, MCPResponse } from "../types.js";
-import { ok, error, VAULT, AGENT, TOPIC, SESSIONS_DIR, safePath } from "./_util.js";
+import { ok, error, VAULT, AGENT, TOPIC, SESSIONS_DIR, safePath, safeAbsPath, obsidianLink } from "./_util.js";
+import { getSessionFile } from "../../../lib.js";
 
 // ── Tool definitions ──────────────────────────────────────────────────
 
@@ -52,42 +53,52 @@ export const definitions: MCPToolDefinition[] = [
     },
   },
 
-  // ── Canvas ────────────────────────────────────────────────────────
+  // ── Canvas (Obsidian JSON Canvas) ──────────────────────────────────
   {
     name: "canvas_create",
     description:
-      "Create a visual canvas/workspace. Generates an HTML canvas page with diagrams, charts, or interactive content. Opens in browser or saves to file.",
+      "Create an Obsidian-native JSON Canvas (.canvas) with nodes and edges. Renders natively in Obsidian with interactive pan/zoom. Nodes can be text, links to vault files, or links to URLs.",
     inputSchema: {
       type: "object",
       properties: {
-        title: { type: "string", description: "Canvas title" },
-        content_type: {
-          type: "string",
-          enum: ["diagram", "chart", "kanban", "timeline", "freeform"],
-          description: "Type of visual content",
+        title: { type: "string", description: "Canvas title (used as filename)" },
+        nodes: {
+          type: "array",
+          description: "Canvas nodes — each has {id, type, text?, file?, url?, x, y, width, height, color?}. Types: 'text', 'file', 'link'.",
+          items: { type: "object", additionalProperties: true },
         },
-        data: {
-          type: "object",
-          description: "Content data (structure depends on content_type)",
-          additionalProperties: true,
+        edges: {
+          type: "array",
+          description: "Edges connecting nodes — each has {id, fromNode, toNode, label?, color?}",
+          items: { type: "object", additionalProperties: true },
         },
-        output_path: { type: "string", description: "Save HTML to this path (optional)" },
+        output_path: { type: "string", description: "Save .canvas to this path (optional, defaults to agent workspace)" },
       },
-      required: ["title", "content_type"],
+      required: ["title"],
     },
   },
   {
     name: "canvas_update",
     description:
-      "Update an existing canvas with new data or content. Requires the canvas file path.",
+      "Update an existing Obsidian JSON Canvas (.canvas) file. Add or replace nodes and edges.",
     inputSchema: {
       type: "object",
       properties: {
-        canvas_path: { type: "string", description: "Path to existing canvas HTML file" },
-        updates: {
-          type: "object",
-          description: "Updates to apply (varies by canvas type)",
-          additionalProperties: true,
+        canvas_path: { type: "string", description: "Path to existing .canvas file" },
+        add_nodes: {
+          type: "array",
+          description: "New nodes to add",
+          items: { type: "object", additionalProperties: true },
+        },
+        add_edges: {
+          type: "array",
+          description: "New edges to add",
+          items: { type: "object", additionalProperties: true },
+        },
+        remove_node_ids: {
+          type: "array",
+          description: "IDs of nodes to remove",
+          items: { type: "string" },
         },
       },
       required: ["canvas_path"],
@@ -107,7 +118,7 @@ export const definitions: MCPToolDefinition[] = [
   {
     name: "cross_agent_read",
     description:
-      "Read files from another agent's workspace. Use this for cross-agent context (e.g. personal agent reading work agent's recent memory). Read-only access.",
+      "Read files from another configured agent's workspace for cross-agent context. Read-only access.",
     inputSchema: {
       type: "object",
       properties: {
@@ -128,14 +139,46 @@ export const definitions: MCPToolDefinition[] = [
 
 // ── Handlers ──────────────────────────────────────────────────────────
 
-type CanvasGenerator = (title: string, data: Record<string, unknown>) => string;
+// ── JSON Canvas types (Obsidian spec) ───────────────────────────────
+
+interface CanvasNode {
+  id: string;
+  type: "text" | "file" | "link";
+  text?: string;
+  file?: string;
+  url?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color?: string;
+}
+
+interface CanvasEdge {
+  id: string;
+  fromNode: string;
+  toNode: string;
+  fromSide?: "top" | "right" | "bottom" | "left";
+  toSide?: "top" | "right" | "bottom" | "left";
+  label?: string;
+  color?: string;
+}
+
+interface CanvasData {
+  nodes: CanvasNode[];
+  edges: CanvasEdge[];
+}
 
 export const handlers: Record<string, MCPHandler> = {
   // ── Devices (stub) ────────────────────────────────────────────────
 
   async nodes_list(args: Record<string, unknown>): Promise<MCPResponse> {
     const type = args.type as string | undefined;
-    const nodesConfig = join(process.env.LETYCLAW_PROJECT_ROOT || process.cwd(), "config", "nodes.yaml");
+    const nodesConfig = join(
+      process.env.LETYCLAW_PROJECT_ROOT || "/root/letyclaw",
+      "config",
+      "nodes.yaml",
+    );
     if (!existsSync(nodesConfig)) {
       return ok(JSON.stringify({
         nodes: [],
@@ -145,8 +188,9 @@ export const handlers: Record<string, MCPHandler> = {
     }
 
     try {
-      const raw = YAML.load(readFileSync(nodesConfig, "utf8")) as { nodes?: Record<string, string>[] } | null;
-      const nodes = raw?.nodes ?? [];
+      const raw = readFileSync(nodesConfig, "utf8");
+      const parsed = YAML.load(raw) as { nodes?: Record<string, string>[] } | null;
+      const nodes = parsed?.nodes ?? [];
       const filtered = type ? nodes.filter((n) => n.type === type) : nodes;
       return ok(JSON.stringify(filtered, null, 2));
     } catch (err) {
@@ -169,37 +213,47 @@ export const handlers: Record<string, MCPHandler> = {
     }, null, 2));
   },
 
-  // ── Canvas ────────────────────────────────────────────────────────
+  // ── Canvas (Obsidian JSON Canvas) ──────────────────────────────────
 
   async canvas_create(args: Record<string, unknown>): Promise<MCPResponse> {
     const title = args.title as string;
-    const content_type = args.content_type as string;
-    const data = (args.data as Record<string, unknown> | undefined) ?? {};
+    const nodes = (args.nodes as CanvasNode[] | undefined) ?? [];
+    const edges = (args.edges as CanvasEdge[] | undefined) ?? [];
     const output_path = args.output_path as string | undefined;
 
-    const templates: Record<string, CanvasGenerator> = {
-      diagram: generateDiagramHtml,
-      chart: generateChartHtml,
-      kanban: generateKanbanHtml,
-      timeline: generateTimelineHtml,
-      freeform: generateFreeformHtml,
-    };
+    // Auto-assign IDs and layout if not provided
+    let nextX = 0;
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i]!;
+      if (!n.id) n.id = `node-${i}`;
+      if (n.x === undefined) { n.x = nextX; nextX += 300; }
+      if (n.y === undefined) n.y = 0;
+      if (!n.width) n.width = 250;
+      if (!n.height) n.height = 120;
+      if (!n.type) n.type = n.file ? "file" : n.url ? "link" : "text";
+    }
 
-    const generator = templates[content_type];
-    if (!generator) return error(`Unknown content_type: ${content_type}`);
+    for (let i = 0; i < edges.length; i++) {
+      if (!edges[i]!.id) edges[i]!.id = `edge-${i}`;
+    }
 
-    const html = generator(title, data);
+    const canvas: CanvasData = { nodes, edges };
+    const json = JSON.stringify(canvas, null, 2);
+
     const agentId = AGENT();
-    const savePath = output_path || join(VAULT(), agentId || "shared", `canvas-${Date.now()}.html`);
+    const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    const savePath = output_path || join(VAULT(), agentId || "shared", `${slug}.canvas`);
 
     try {
-      writeFileSync(savePath, html);
+      writeFileSync(savePath, json);
+      const vaultRel = savePath.replace(VAULT() + "/", "");
       return ok(JSON.stringify({
         created: true,
         path: savePath,
-        type: content_type,
         title,
-        size: html.length,
+        node_count: nodes.length,
+        edge_count: edges.length,
+        obsidian: obsidianLink(vaultRel),
       }, null, 2));
     } catch (err) {
       return error(`Failed to save canvas: ${(err as Error).message}`);
@@ -208,28 +262,40 @@ export const handlers: Record<string, MCPHandler> = {
 
   async canvas_update(args: Record<string, unknown>): Promise<MCPResponse> {
     const canvas_path = args.canvas_path as string;
-    const updates = args.updates as Record<string, unknown> | undefined;
+    const add_nodes = (args.add_nodes as CanvasNode[] | undefined) ?? [];
+    const add_edges = (args.add_edges as CanvasEdge[] | undefined) ?? [];
+    const remove_ids = (args.remove_node_ids as string[] | undefined) ?? [];
+
     if (!existsSync(canvas_path)) return error(`Canvas not found: ${canvas_path}`);
 
-    // Read existing canvas and inject updated data
-    let html = readFileSync(canvas_path, "utf8");
-    const dataMarker = "/* CANVAS_DATA */";
-    const markerIdx = html.indexOf(dataMarker);
-
-    if (markerIdx === -1) {
-      return error("Canvas file does not contain a CANVAS_DATA marker — may not be a letyclaw canvas");
+    let canvas: CanvasData;
+    try {
+      canvas = JSON.parse(readFileSync(canvas_path, "utf8")) as CanvasData;
+    } catch {
+      return error("Failed to parse canvas file — may not be valid JSON Canvas");
     }
 
-    // Replace the data section
-    const endMarker = html.indexOf("/* END_CANVAS_DATA */", markerIdx);
-    if (endMarker === -1) return error("Malformed canvas — missing END_CANVAS_DATA marker");
+    // Remove nodes and their connected edges
+    if (remove_ids.length > 0) {
+      const removeSet = new Set(remove_ids);
+      canvas.nodes = canvas.nodes.filter((n) => !removeSet.has(n.id));
+      canvas.edges = canvas.edges.filter((e) => !removeSet.has(e.fromNode) && !removeSet.has(e.toNode));
+    }
 
-    const newData = `${dataMarker}\nconst canvasData = ${JSON.stringify(updates, null, 2)};\n/* END_CANVAS_DATA */`;
-    html = html.slice(0, markerIdx) + newData + html.slice(endMarker + "/* END_CANVAS_DATA */".length);
+    // Add new nodes and edges
+    canvas.nodes.push(...add_nodes);
+    canvas.edges.push(...add_edges);
 
-    writeFileSync(canvas_path, html);
+    writeFileSync(canvas_path, JSON.stringify(canvas, null, 2));
 
-    return ok(JSON.stringify({ updated: true, path: canvas_path }));
+    const vaultRel = canvas_path.replace(VAULT() + "/", "");
+    return ok(JSON.stringify({
+      updated: true,
+      path: canvas_path,
+      node_count: canvas.nodes.length,
+      edge_count: canvas.edges.length,
+      obsidian: obsidianLink(vaultRel),
+    }, null, 2));
   },
 
   // ── Agent Context ─────────────────────────────────────────────────
@@ -249,11 +315,15 @@ export const handlers: Record<string, MCPHandler> = {
 
     // List memory files if workspace exists
     if (workspace && existsSync(join(workspace, "memory"))) {
-      info.memory_files = readdirSync(join(workspace, "memory"))
+      const memFiles = readdirSync(join(workspace, "memory"))
         .filter((f) => f.endsWith(".md"))
         .sort()
         .reverse()
         .slice(0, 10);
+      info.memory_files = memFiles;
+      info.obsidian_links = Object.fromEntries(
+        memFiles.map((f) => [f, obsidianLink(`${agentId}/memory/${f}`)])
+      );
     }
 
     // List bootstrap files
@@ -265,7 +335,7 @@ export const handlers: Record<string, MCPHandler> = {
 
     // Check session
     if (agentId && topicId) {
-      const sessionFile = join(SESSIONS_DIR(), `${agentId}-topic-${topicId}.json`);
+      const sessionFile = getSessionFile(SESSIONS_DIR(), agentId, topicId);
       if (existsSync(sessionFile)) {
         try {
           const sessionData = JSON.parse(readFileSync(sessionFile, "utf8")) as Record<string, unknown>;
@@ -291,14 +361,23 @@ export const handlers: Record<string, MCPHandler> = {
     const list_dir = args.list_dir as string | undefined;
 
     if (!agent_id) return error("agent_id is required");
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(agent_id)) return error("Invalid agent_id — access denied");
 
-    const agentWorkspace = join(VAULT(), agent_id);
+    const vaultRoot = VAULT();
+    const canonicalVault = realpathSync(vaultRoot);
+    const agentWorkspace = safePath(vaultRoot, agent_id);
+    if (!agentWorkspace) return error("Invalid agent workspace — access denied");
     if (!existsSync(agentWorkspace)) return error(`Agent workspace not found: ${agent_id}`);
+    const canonicalWorkspace = realpathSync(agentWorkspace);
+    if (!safeAbsPath(canonicalWorkspace, [canonicalVault])) return error("Agent workspace escapes vault — access denied");
 
     if (list_dir) {
-      const dir = join(agentWorkspace, list_dir);
+      const dir = safePath(agentWorkspace, list_dir);
+      if (!dir) return error("Path traversal detected — access denied");
       if (!existsSync(dir)) return error(`Directory not found: ${agent_id}/${list_dir}`);
-      const files = readdirSync(dir).sort();
+      const canonicalDir = realpathSync(dir);
+      if (!safeAbsPath(canonicalDir, [canonicalWorkspace])) return error("Path traversal detected — access denied");
+      const files = readdirSync(canonicalDir).sort();
       return ok(JSON.stringify({ agent: agent_id, directory: list_dir, files }, null, 2));
     }
 
@@ -307,108 +386,13 @@ export const handlers: Record<string, MCPHandler> = {
     const filePath = safePath(agentWorkspace, relPath);
     if (!filePath) return error("Path traversal detected — access denied");
     if (!existsSync(filePath)) return error(`File not found: ${agent_id}/${relPath}`);
+    const canonicalFile = realpathSync(filePath);
+    if (!safeAbsPath(canonicalFile, [canonicalWorkspace])) return error("Path traversal detected — access denied");
 
-    const content = readFileSync(filePath, "utf8");
+    const content = readFileSync(canonicalFile, "utf8");
     if (content.length > 10000) {
       return ok(`(truncated to 10000 chars)\n\n${content.slice(0, 10000)}...`);
     }
     return ok(content);
   },
 };
-
-// ── Canvas HTML generators ──────────────────────────────────────────
-
-function canvasWrapper(title: string, body: string): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>${title}</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; padding: 2rem; }
-  h1 { font-size: 1.5rem; margin-bottom: 1.5rem; color: #f8fafc; }
-  .card { background: #1e293b; border-radius: 0.75rem; padding: 1rem; margin: 0.5rem; border: 1px solid #334155; }
-</style>
-</head>
-<body>
-<h1>${title}</h1>
-<script>
-/* CANVAS_DATA */
-const canvasData = {};
-/* END_CANVAS_DATA */
-</script>
-${body}
-</body>
-</html>`;
-}
-
-function generateDiagramHtml(title: string, data: Record<string, unknown>): string {
-  const nodes = (data.nodes || []) as Array<Record<string, unknown> | string>;
-  const edges = (data.edges || []) as Array<Record<string, unknown> | [string, string]>;
-  return canvasWrapper(title, `
-<div style="display: flex; flex-wrap: wrap; gap: 1rem; justify-content: center; padding: 2rem;">
-  ${nodes.map((n) => {
-    const obj = typeof n === "string" ? null : n;
-    const id = obj ? (obj.id as string) ?? n : n;
-    const label = obj ? (obj.label as string) ?? n : n;
-    return `<div class="card" id="node-${id}">${label}</div>`;
-  }).join("\n  ")}
-</div>
-<pre style="color: #94a3b8; padding: 1rem;">Connections: ${edges.map((e) => {
-    if (Array.isArray(e)) return `${e[0]} \u2192 ${e[1]}`;
-    return `${e.from as string} \u2192 ${e.to as string}`;
-  }).join(", ")}</pre>`);
-}
-
-function generateChartHtml(title: string, data: Record<string, unknown>): string {
-  const labels = (data.labels || []) as string[];
-  const values = (data.values || []) as number[];
-  const max = Math.max(...values, 1);
-  return canvasWrapper(title, `
-<div style="display: flex; align-items: flex-end; gap: 0.5rem; height: 300px; padding: 2rem;">
-  ${values.map((v, i) => `
-  <div style="display: flex; flex-direction: column; align-items: center; flex: 1;">
-    <span style="font-size: 0.75rem; color: #94a3b8;">${v}</span>
-    <div style="width: 100%; background: #3b82f6; border-radius: 4px 4px 0 0; height: ${(v / max) * 250}px;"></div>
-    <span style="font-size: 0.75rem; color: #94a3b8; margin-top: 0.5rem;">${labels[i] || ""}</span>
-  </div>`).join("")}
-</div>`);
-}
-
-function generateKanbanHtml(title: string, data: Record<string, unknown>): string {
-  const columns = (data.columns || [
-    { name: "To Do", items: [] },
-    { name: "In Progress", items: [] },
-    { name: "Done", items: [] },
-  ]) as Array<{ name: string; items?: Array<string | Record<string, unknown>> }>;
-  return canvasWrapper(title, `
-<div style="display: flex; gap: 1rem; overflow-x: auto; padding: 1rem;">
-  ${columns.map((col) => `
-  <div style="min-width: 250px; flex: 1;">
-    <h3 style="color: #94a3b8; font-size: 0.875rem; text-transform: uppercase; margin-bottom: 0.75rem;">${col.name} (${(col.items || []).length})</h3>
-    ${(col.items || []).map((item) => `<div class="card">${typeof item === "string" ? item : (item as Record<string, unknown>).title || (item as Record<string, unknown>).text || JSON.stringify(item)}</div>`).join("\n")}
-  </div>`).join("\n")}
-</div>`);
-}
-
-function generateTimelineHtml(title: string, data: Record<string, unknown>): string {
-  const events = (data.events || []) as Array<Record<string, unknown>>;
-  return canvasWrapper(title, `
-<div style="padding: 2rem;">
-  ${events.map((e) => `
-  <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem;">
-    <div style="width: 100px; text-align: right; color: #94a3b8; font-size: 0.875rem; flex-shrink: 0;">${(e.date as string) || (e.time as string) || ""}</div>
-    <div style="width: 2px; background: #3b82f6; position: relative;">
-      <div style="width: 10px; height: 10px; background: #3b82f6; border-radius: 50%; position: absolute; left: -4px; top: 4px;"></div>
-    </div>
-    <div class="card" style="flex: 1;">${(e.title as string) || (e.text as string) || String(e)}</div>
-  </div>`).join("\n")}
-</div>`);
-}
-
-function generateFreeformHtml(title: string, data: Record<string, unknown>): string {
-  const content = (data.html as string) || (data.content as string) || "<p>Empty canvas</p>";
-  return canvasWrapper(title, `<div style="padding: 2rem;">${content}</div>`);
-}

@@ -1,4 +1,9 @@
 # letyclaw config — copy to letyclaw.yaml and customize
+bot:
+  name: "Letyclaw"
+  owner: "Owner"
+  timezone: "UTC"
+
 agents:
   defaults:
     maxTurns: 10
@@ -6,8 +11,9 @@ agents:
       ttlHours: 24
       pruneAfterDays: 30
     timeouts:
-      claudeTotal: 600000
-      claudeNoOutput: 180000
+      claudeTotal: 1200000
+      # A run still working at claudeTotal may be resumed with a fresh budget.
+      claudeMaxContinuations: 2
     rateLimit:
       maxRequests: 10
       windowMs: 60000
@@ -16,18 +22,28 @@ agents:
     - id: personal
       name: "Personal"
       maxTurns: 50
+      # Credential/service-dependent toolsets are opt-in. Remove a name only
+      # after configuring that integration for this runtime.
+      disabledToolsets: [browser, connectors, gdrive, gmail, media, ticktick, voice]
 
     - id: work
       name: "Work"
       maxTurns: 50
+      # Optional progressive skills and per-agent tool visibility controls:
+      # skills: ["your-skill-name"]
+      # enabledToolsets: ["memory", "sessions", "skills"]
+      disabledToolsets: [browser, connectors, gdrive, gmail, media, ticktick, voice]
+      # disabledTools: ["ticktick_delete_task"]
 
     - id: health
       name: "Health"
       maxTurns: 10
+      disabledToolsets: [browser, connectors, gdrive, gmail, media, ticktick, voice]
 
     - id: finance
       name: "Finance"
       maxTurns: 10
+      disabledToolsets: [browser, connectors, gdrive, gmail, media, ticktick, voice]
 
 channels:
   telegram:

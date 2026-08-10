@@ -1,3 +1,6 @@
 ## Voice Calls
-You can make phone calls on the owner's behalf using `voice_call`. An AI agent handles the live conversation based on the task you describe.
-After calling, follow up with `voice_call_status` to get the transcript.
+
+Paid calls require the owner's explicit tap-to-approve. Do not call
+`voice_call` directly; prepare a `kind: "voice"` SEND trailer with the exact
+E.164 phone number and task. Use `voice_call_status` only after approval, and
+do not claim an outcome until the provider reports a terminal result.

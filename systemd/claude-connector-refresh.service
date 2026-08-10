@@ -1,0 +1,40 @@
+[Unit]
+Description=Refresh isolated Claude connector OAuth token
+Wants=network-online.target
+After=network-online.target
+# Refresh the gate state after this isolated credential has been checked or
+# rotated. The manager starts the existing letyclaw-owned probe only after this
+# oneshot exits, so the shared credential lock has already been released.
+OnSuccess=claude-connector-check.service
+OnFailure=claude-connector-check.service
+
+[Service]
+Type=oneshot
+User=letyclaw
+Group=letyclaw
+WorkingDirectory=/tmp
+UMask=0077
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=CLAUDE_PATH=/usr/bin/claude
+Environment=CLAUDE_REFRESH_NODE=/usr/bin/node
+Environment=CLAUDE_CREDENTIAL_HOME=/root/letyclaw/sessions/connector-home
+Environment=HOME=/tmp
+ExecStart=/root/letyclaw/scripts/refresh-claude-token.sh
+TimeoutStartSec=100
+
+# This namespace can rotate only the isolated connector credential; the main
+# letyclaw Claude account and vault/repository remain hidden despite the shared UID.
+ProtectSystem=strict
+ProtectHome=tmpfs
+BindReadOnlyPaths=-/root/letyclaw/scripts/refresh-claude-token.sh -/root/letyclaw/sessions/connector-home/.claude.json
+BindPaths=/root/letyclaw/sessions/connector-home/.claude
+InaccessiblePaths=-/home/letyclaw
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectClock=true
+RestrictSUIDSGID=true

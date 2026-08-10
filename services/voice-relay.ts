@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /**
- * Voice Relay Server — bridges Twilio ConversationRelay <-> Claude API.
+ * Optional Voice Relay Server — bridges Twilio ConversationRelay <-> Claude.
+ *
+ * This is retained for a future explicit Twilio rollout but is disabled in
+ * normal production deploys. Current approved calls use Vapi directly.
  *
  * Twilio handles STT (Deepgram) and TTS (Google/ElevenLabs).
  * This server receives transcribed text via WebSocket, sends it to
@@ -8,7 +11,9 @@
  *
  * Environment variables:
  *   ANTHROPIC_API_KEY     — Claude API key (required)
+ *   VOICE_RELAY_HOST      — Bind host (default: 127.0.0.1)
  *   VOICE_RELAY_PORT      — Port to listen on (default: 8787)
+ *   VOICE_RELAY_ALLOW_PUBLIC — Must be true to bind a non-loopback host
  *   VOICE_DB_PATH         — SQLite database path
  *   VOICE_DEFAULT_MODEL   — Default Claude model (default: claude-haiku-4-5)
  */
@@ -24,8 +29,9 @@ import {
   appendTranscript,
 } from "./voice-db.js";
 import type { CallRow } from "./voice-db.js";
+import { loadVoiceRelayConfig } from "./voice-relay-config.js";
 
-const PORT = parseInt(process.env.VOICE_RELAY_PORT || "8787", 10);
+const { host: HOST, port: PORT } = loadVoiceRelayConfig();
 const DEFAULT_MODEL = process.env.VOICE_DEFAULT_MODEL || "claude-haiku-4-5";
 
 // ── Anthropic client ────────────────────────────────────────────────
@@ -302,6 +308,6 @@ app.register(async function (fastify) {
 // Ensure DB is initialized
 getDb();
 
-await app.listen({ port: PORT, host: "0.0.0.0" });
-console.log(`[voice-relay] listening on port ${PORT}`);
+await app.listen({ port: PORT, host: HOST });
+console.log(`[voice-relay] listening on ${HOST}:${PORT}`);
 console.log(`[voice-relay] model: ${DEFAULT_MODEL}`);

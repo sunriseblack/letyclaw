@@ -1,0 +1,14 @@
+[Unit]
+Description=Letyclaw browser MCP loopback listener
+
+[Socket]
+ListenStream=127.0.0.1:3100
+Accept=no
+Service=playwright-mcp-proxy.service
+NoDelay=true
+Backlog=128
+IPAddressDeny=any
+IPAddressAllow=127.0.0.1/32
+
+[Install]
+WantedBy=sockets.target

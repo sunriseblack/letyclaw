@@ -3,24 +3,30 @@
  *
  * Interactive first-run configuration via Telegram.
  * Walks the user through: bot name, owner, timezone, topics, integrations.
- * Generates config/letyclaw.yaml and agents/unified/CLAUDE.md.
+ * Generates main + cron YAML, shared instructions, and isolated domain files.
  *
  * Usage:
  *   npx tsx setup.ts              — Start the setup wizard
  *   node dist/setup.js            — After build
- *   node dist/bot.js --setup      — Triggered from bot.ts when no config exists
  */
 import TelegramBot from "node-telegram-bot-api";
-import { writeFileSync, mkdirSync } from "fs";
-import { join, dirname } from "path";
+import type { Message } from "node-telegram-bot-api";
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from "fs";
+import { basename, dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import YAML from "js-yaml";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+export const PROJECT_ROOT = basename(__dirname) === "dist" ? dirname(__dirname) : __dirname;
+
+function writePrivateFile(path: string, content: string): void {
+  writeFileSync(path, content, { mode: 0o600 });
+  chmodSync(path, 0o600);
+}
 
 // ── Types ────────────────────────────────────────────────────────────
 
-interface TopicSetup {
+export interface TopicSetup {
   id: string;
   name: string;
   threadId: number;
@@ -28,7 +34,7 @@ interface TopicSetup {
   maxTurns: number;
 }
 
-interface SetupState {
+export interface SetupState {
   step: string;
   botName: string;
   ownerName: string;
@@ -65,7 +71,7 @@ export async function runSetupWizard(): Promise<void> {
 
   console.log("Setup wizard started. Send a message to your bot on Telegram to begin.");
 
-  bot.on("message", async (msg: TelegramBot.Message) => {
+  bot.on("message", async (msg: Message) => {
     const chatId = msg.chat.id;
     const text = msg.text?.trim() || "";
     const userId = msg.from?.id || 0;
@@ -87,6 +93,10 @@ export async function runSetupWizard(): Promise<void> {
         }
 
         case "owner_name": {
+          if (!text) {
+            await bot.sendMessage(chatId, "Please enter the name the assistant should use for you.");
+            break;
+          }
           state.ownerName = text;
           await bot.sendMessage(chatId,
             `Got it, ${text}! What would you like to name your bot? (default: Letyclaw)`
@@ -107,7 +117,14 @@ export async function runSetupWizard(): Promise<void> {
         }
 
         case "timezone": {
-          state.timezone = text.toLowerCase() === "default" || !text ? "UTC" : text;
+          const timezone = text.toLowerCase() === "default" || !text ? "UTC" : text;
+          if (!isValidTimezone(timezone)) {
+            await bot.sendMessage(chatId,
+              `"${timezone}" is not a valid IANA timezone. Try a value such as Europe/London or America/New_York.`
+            );
+            break;
+          }
+          state.timezone = timezone;
           await bot.sendMessage(chatId,
             `Timezone: ${state.timezone}\n\n` +
             "Now let's set up your topics. Each topic is a separate conversation thread in a Telegram group.\n\n" +
@@ -133,7 +150,7 @@ export async function runSetupWizard(): Promise<void> {
               "(e.g., 'Personal', 'Work', 'Health')"
             );
             state.step = "topic_name";
-          } else if (text.startsWith("-100")) {
+          } else if (/^-100\d{6,}$/.test(text) && Number.isSafeInteger(Number(text))) {
             // User manually entered a group ID
             state.chatId = Number(text);
             await bot.sendMessage(chatId,
@@ -159,6 +176,11 @@ export async function runSetupWizard(): Promise<void> {
               break;
             }
             await askIntegrations(bot, chatId, state);
+            break;
+          }
+
+          if (!text) {
+            await bot.sendMessage(chatId, "Please enter a topic name, or say 'done'.");
             break;
           }
 
@@ -189,7 +211,13 @@ export async function runSetupWizard(): Promise<void> {
             console.log(`Could not auto-create topic, using thread ID ${topicId}`);
           }
 
-          const id = state.currentTopicName!.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+          const baseId = state.currentTopicName!.toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-|-$/g, "") || `topic-${state.topics.length + 1}`;
+          let id = baseId;
+          for (let suffix = 2; state.topics.some((topic) => topic.id === id); suffix++) {
+            id = `${baseId}-${suffix}`;
+          }
           state.topics.push({
             id,
             name: state.currentTopicName!,
@@ -211,14 +239,17 @@ export async function runSetupWizard(): Promise<void> {
         case "integrations": {
           const selected = text.split(/[,\s]+/).filter((s) => s.match(/^\d$/));
           const integrationMap: Record<string, string> = {
-            "1": "email", "2": "slack", "3": "browser",
-            "4": "voice", "5": "flights", "6": "market_data",
+            "1": "browser", "2": "voice",
           };
 
           if (text.toLowerCase() === "skip" || text.toLowerCase() === "none") {
             state.integrations = [];
           } else {
             state.integrations = selected.map((n) => integrationMap[n] || "").filter(Boolean);
+            if (!state.integrations.length) {
+              await bot.sendMessage(chatId, "Reply with 1, 2, both numbers, or 'skip'.");
+              break;
+            }
           }
 
           await generateAndSave(bot, chatId, state);
@@ -240,13 +271,11 @@ export async function runSetupWizard(): Promise<void> {
 
 async function askIntegrations(bot: TelegramBot, chatId: number, state: SetupState): Promise<void> {
   await bot.sendMessage(chatId,
-    "Optional integrations. Reply with numbers (e.g., '1 3') or 'skip' for none:\n\n" +
-    "1. Email (Gmail/IMAP)\n" +
-    "2. Slack\n" +
-    "3. Browser automation (Playwright)\n" +
-    "4. Voice calls (Vapi)\n" +
-    "5. Flight search\n" +
-    "6. Stock/market data (Alpha Vantage)"
+    "Optional capabilities to expose. This updates tool visibility; it does not install services or credentials. " +
+    "Reply with numbers (for example, '1 2') or 'skip':\n\n" +
+    "1. Audited browser gateway (separate host setup required)\n" +
+    "2. Voice calls (Vapi credentials required)\n\n" +
+    "Email, Slack, flight search, market data, and other external MCPs are configured separately after setup."
   );
   state.step = "integrations";
 }
@@ -257,21 +286,41 @@ async function generateAndSave(bot: TelegramBot, chatId: number, state: SetupSta
   const config = buildConfig(state);
   const configYaml = YAML.dump(config, { lineWidth: 120, noRefs: true });
 
-  const configDir = join(__dirname, "config");
+  const configDir = join(PROJECT_ROOT, "config");
   mkdirSync(configDir, { recursive: true });
 
   const configPath = join(configDir, "letyclaw.yaml");
-  writeFileSync(configPath, configYaml);
+  writePrivateFile(configPath, configYaml);
 
-  // Generate CLAUDE.md via the template engine
-  try {
-    const mod = await import("./scripts/generate-claude-md.js") as { generateClaudeMd: (cfg: Record<string, unknown>) => string };
-    const claudeMd = mod.generateClaudeMd(config as Record<string, unknown>);
-    const claudeMdDir = join(__dirname, "agents", "unified");
-    mkdirSync(claudeMdDir, { recursive: true });
-    writeFileSync(join(claudeMdDir, "CLAUDE.md"), claudeMd);
-  } catch (err) {
-    console.error("Could not generate CLAUDE.md:", err instanceof Error ? err.message : String(err));
+  const cronPath = join(configDir, "cron.yaml");
+  const wroteCron = !existsSync(cronPath);
+  if (wroteCron) {
+    writePrivateFile(cronPath, YAML.dump(buildCronConfig(state), { lineWidth: 120, noRefs: true }));
+  }
+
+  // Generate one shared file plus isolated per-domain files. Keep a local
+  // generated copy and deploy the same artifacts to the active vault so the
+  // runtime works immediately without exposing one topic's facts to another.
+  const mod = await import("./scripts/generate-claude-md.js") as {
+    generateClaudeMd: (cfg: Record<string, unknown>) => string;
+    generateDomainInstructions: (cfg: Record<string, unknown>) => Record<string, string>;
+  };
+  const claudeMd = mod.generateClaudeMd(config as Record<string, unknown>);
+  const domains = mod.generateDomainInstructions(config as Record<string, unknown>);
+  const generatedDir = join(PROJECT_ROOT, "agents", "unified");
+  const generatedDomainsDir = join(generatedDir, "domains");
+  mkdirSync(generatedDomainsDir, { recursive: true });
+  writePrivateFile(join(generatedDir, "CLAUDE.md"), claudeMd);
+  for (const [id, instructions] of Object.entries(domains)) {
+    writePrivateFile(join(generatedDomainsDir, `${id}.md`), instructions);
+  }
+
+  const vaultPath = resolve(process.env.VAULT_PATH?.trim() || join(PROJECT_ROOT, "vault"));
+  const vaultDomainsDir = join(vaultPath, ".letyclaw", "domains");
+  mkdirSync(vaultDomainsDir, { recursive: true });
+  writePrivateFile(join(vaultPath, "CLAUDE.md"), claudeMd);
+  for (const [id, instructions] of Object.entries(domains)) {
+    writePrivateFile(join(vaultDomainsDir, `${id}.md`), instructions);
   }
 
   // Summary
@@ -288,22 +337,26 @@ async function generateAndSave(bot: TelegramBot, chatId: number, state: SetupSta
     `Group: ${state.chatId}\n\n` +
     `Topics:\n${topicList}\n\n` +
     `Integrations: ${intList}\n\n` +
-    `Config saved to: config/letyclaw.yaml\n\n` +
+    `Config saved to: config/letyclaw.yaml\n` +
+    `${wroteCron ? "Cron config saved to" : "Existing cron config kept at"}: config/cron.yaml\n` +
+    `Instructions deployed to: ${vaultPath}\n\n` +
     `Next steps:\n` +
-    `1. Review and customize config/letyclaw.yaml\n` +
+    `1. Review config/letyclaw.yaml and config/cron.yaml\n` +
     `2. Set environment variables in .env\n` +
-    `3. Run: npm run build && npm start\n\n` +
+    `3. Register the local MCP server (see README)\n` +
+    `4. Run: npm start\n\n` +
     `Try sending a message in one of your topics!`
   );
 
   console.log(`\nSetup complete! Config saved to ${configPath}`);
-  console.log("Run 'npm run build && npm start' to launch your bot.");
+  console.log(`Instructions deployed to ${vaultPath}`);
+  console.log("Register the local MCP server, then run 'npm start' to launch your bot.");
 
   // Give time for the message to send, then exit
   setTimeout(() => process.exit(0), 2000);
 }
 
-function buildConfig(state: SetupState): Record<string, unknown> {
+export function buildConfig(state: SetupState): Record<string, unknown> {
   const topics = state.topics.map((t) => ({
     id: t.id,
     name: t.name,
@@ -318,9 +371,12 @@ function buildConfig(state: SetupState): Record<string, unknown> {
   }));
 
   const integrations: Record<string, { enabled: boolean }> = {};
-  for (const key of ["email", "slack", "browser", "voice", "flights", "market_data"]) {
+  for (const key of ["browser", "voice"]) {
     integrations[key] = { enabled: state.integrations.includes(key) };
   }
+  const optionalToolsets = ["browser", "connectors", "gdrive", "gmail", "media", "ticktick", "voice"];
+  const enabledOptionalToolsets = new Set(state.integrations);
+  const disabledOptionalToolsets = optionalToolsets.filter((name) => !enabledOptionalToolsets.has(name));
 
   return {
     bot: {
@@ -330,21 +386,18 @@ function buildConfig(state: SetupState): Record<string, unknown> {
       languages: ["en"],
       default_language: "en",
     },
-    telegram: {
-      chat_id: state.chatId,
-      allowed_users: [state.userId],
-    },
     agents: {
       defaults: {
         maxTurns: 10,
         session: { ttlHours: 24, pruneAfterDays: 30 },
-        timeouts: { claudeTotal: 600000, claudeNoOutput: 180000 },
+        timeouts: { claudeTotal: 1200000, claudeMaxContinuations: 2 },
         rateLimit: { maxRequests: 10, windowMs: 60000 },
       },
       list: state.topics.map((t) => ({
         id: t.id,
         name: t.name,
         maxTurns: t.maxTurns,
+        disabledToolsets: disabledOptionalToolsets,
       })),
     },
     channels: {
@@ -359,11 +412,25 @@ function buildConfig(state: SetupState): Record<string, unknown> {
     },
     topics,
     integrations,
+  };
+}
+
+export function buildCronConfig(state: Pick<SetupState, "timezone">): Record<string, unknown> {
+  return {
     cron: {
       timezone: state.timezone,
       jobs: [],
     },
   };
+}
+
+export function isValidTimezone(timezone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: timezone }).format();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ── CLI entry point ──────────────────────────────────────────────────

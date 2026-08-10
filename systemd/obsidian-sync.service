@@ -1,20 +1,28 @@
 [Unit]
-Description=Obsidian Headless — vault sync via Obsidian Sync
-After=network-online.target
+Description=Optional Obsidian Headless vault sync
 Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
-User=root
+User=letyclaw
+Group=letyclaw
+WorkingDirectory=/home/letyclaw
+Environment=HOME=/home/letyclaw
+Environment=OBSIDIAN_VAULT_NAME=Letyclaw
 Environment=OBSIDIAN_VAULT_PATH=/root/vault
-ExecStart=/usr/bin/obsidian-headless --vault /root/vault
+Environment=OBSIDIAN_DEVICE_NAME=letyclaw-server
+EnvironmentFile=-/etc/letyclaw-obsidian/env
+ExecStart=/usr/bin/ob sync --continuous --vault ${OBSIDIAN_VAULT_NAME} --vault-path ${OBSIDIAN_VAULT_PATH} --device-name ${OBSIDIAN_DEVICE_NAME}
 Restart=on-failure
 RestartSec=10
-
-# Security hardening
+UMask=0077
+PrivateTmp=true
+PrivateDevices=true
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/root/vault
+ProtectHome=read-only
+ReadWritePaths=/root/vault /home/letyclaw
 
 [Install]
 WantedBy=multi-user.target

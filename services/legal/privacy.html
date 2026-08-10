@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Letyclaw — Privacy Policy</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 720px; margin: 4rem auto; padding: 0 1rem; color: #1c1c1c; line-height: 1.55; }
+  h1 { margin-bottom: 0; }
+  .updated { color: #777; margin-top: 0; }
+  h2 { margin-top: 2.2rem; }
+  code { background: #f2f2f2; padding: 0 0.25rem; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<h1>Privacy Policy — Letyclaw</h1>
+<p class="updated">Last updated: 2026-08-10</p>
+
+<p>
+  <strong>Letyclaw</strong> is a self-hosted personal automation assistant. Each
+  deployment is controlled by its operator and is not offered to third parties
+  by the Letyclaw project.
+</p>
+
+<h2>Who uses Letyclaw</h2>
+<p>
+  Only the operator and Google accounts explicitly connected by that operator.
+  The operator controls who can interact with their deployment.
+</p>
+
+<h2>What data Letyclaw accesses via Google</h2>
+<p>
+  Letyclaw connects to the operator's own Gmail accounts via the Gmail API using
+  the scopes <code>gmail.send</code>, <code>gmail.compose</code>, and
+  <code>gmail.modify</code> to:
+</p>
+<ul>
+  <li>Compose drafts on behalf of the operator</li>
+  <li>Send messages from the operator's own accounts</li>
+  <li>Manage (read / update / delete) drafts the application itself created</li>
+</ul>
+
+<h2>How data is stored</h2>
+<p>
+  OAuth credentials are stored locally on infrastructure controlled by the
+  operator and protected with restrictive filesystem permissions. Host or disk
+  encryption is the operator's responsibility. Telegram messages, agent
+  responses, and scrubbed conversation-recall records may be retained locally
+  according to the deployment's configured session and log retention.
+</p>
+
+<h2>Processors and connected services</h2>
+<p>
+  A deployment sends data only to services the operator configures, such as
+  Telegram, Anthropic/Claude, Google, OpenAI, Vapi, or other MCP integrations.
+  Those services process data under their own terms. The Letyclaw project does
+  not operate a central service or receive a copy of self-hosted deployment
+  data.
+</p>
+
+<h2>What Letyclaw does NOT do</h2>
+<ul>
+  <li>Letyclaw does not operate a central database of Google user data.</li>
+  <li>Letyclaw does not use Google user data for advertising.</li>
+  <li>Letyclaw does not sell Google user data.</li>
+  <li>Access to a self-hosted deployment is controlled by its operator.</li>
+</ul>
+
+<h2>Retention &amp; deletion</h2>
+<p>
+  Tokens can be revoked at any time from the operator's Google Account at
+  <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>.
+  Revocation prevents future Google API access. The operator must separately
+  remove local token, session, log, recall, backup, and generated-artifact files
+  according to their retention requirements.
+</p>
+
+<h2>Contact</h2>
+<p>
+  Questions about a deployment should be directed to that deployment's operator.
+</p>
+
+</body>
+</html>

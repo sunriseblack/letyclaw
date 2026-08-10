@@ -1,0 +1,12 @@
+[Unit]
+Description=Probe Claude CLI auth hourly
+
+[Timer]
+OnCalendar=hourly
+# Catch up one missed run after downtime (e.g. droplet reboot) so a token that
+# died while the box was off is detected promptly, not at the next top-of-hour.
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

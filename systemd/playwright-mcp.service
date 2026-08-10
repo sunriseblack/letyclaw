@@ -1,26 +1,97 @@
 [Unit]
-Description=Playwright MCP Server (persistent browser)
-After=network.target
+Description=Letyclaw safe persistent Playwright browser gateway
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-User=letyclaw
+User=letyclaw-browser
+Group=letyclaw-browser
+WorkingDirectory=/var/lib/letyclaw-browser
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
-Environment=HOME=/home/letyclaw
+Environment=HOME=/var/lib/letyclaw-browser
+Environment=TZ=UTC
+Environment=PLAYWRIGHT_BROWSERS_PATH=/var/lib/letyclaw-browser-runtime/mcp-0.0.78/ms-playwright
+Environment=npm_config_cache=/var/cache/letyclaw-browser/npm
+Environment=PLAYWRIGHT_MCP_CLI=/var/lib/letyclaw-browser-runtime/mcp-0.0.78/mcp/node_modules/@playwright/mcp/cli.js
+Environment=PLAYWRIGHT_PROFILE_DIR=/var/lib/letyclaw-browser/profile
+Environment=PLAYWRIGHT_SECRETS_FILE=/var/lib/letyclaw-browser/secrets.env
+Environment=PLAYWRIGHT_SECRET_POLICY_FILE=/var/lib/letyclaw-browser/secret-policy.json
+Environment=PLAYWRIGHT_OUTPUT_DIR=/root/vault/browser-artifacts
+Environment=PLAYWRIGHT_WORKSPACE_ROOT=/root/vault
+Environment=PLAYWRIGHT_GATEWAY_READY_FILE=/run/letyclaw-browser/ready
+Environment=PLAYWRIGHT_GATEWAY_SOCKET=/run/letyclaw-browser-socket/gateway.sock
+Environment=PLAYWRIGHT_REQUIRE_LOOPBACK_DENY=1
+Environment=PLAYWRIGHT_HEADLESS=0
+Environment=PLAYWRIGHT_LEASE_IDLE_MS=30000
+Environment=PLAYWRIGHT_STAGED_UPLOAD_RETENTION_MS=900000
+Environment=PLAYWRIGHT_SHARED_UPLOAD_DIR=/root/vault/browser-uploads
+Environment=PLAYWRIGHT_PRIVATE_STAGE_DIR=/var/lib/letyclaw-browser/staged-uploads
+Environment=PLAYWRIGHT_EXPOSED_STAGE_DIR=/root/vault/.browser-staged-uploads
+EnvironmentFile=/etc/letyclaw-browser/gateway.env
 
-ExecStart=npx @playwright/mcp@latest \
-  --headless \
-  --port 3100 \
-  --host 127.0.0.1 \
-  --user-data-dir /opt/letyclaw/vault/browser-profiles
+# The trusted gateway owns one private stdio MCP child. The child has no TCP
+# listener, and the gateway filters browser_run_code_unsafe at the server
+# boundary. This cgroup has no loopback access; a separate low-privilege proxy
+# exposes the Unix socket on loopback port 3100.
+ExecStart=/usr/bin/xvfb-run -a -s "-screen 0 1440x1000x24 -nolisten tcp" /usr/bin/node /var/lib/letyclaw-browser-gateway/current/services/browser-gateway.js
+ExecStartPost=/usr/bin/timeout 90 /bin/sh -c 'until test -s /run/letyclaw-browser/ready; do sleep 1; done'
 
 Restart=always
 RestartSec=5
+TimeoutStartSec=100
+TimeoutStopSec=20
+StateDirectory=letyclaw-browser
+StateDirectoryMode=0700
+CacheDirectory=letyclaw-browser
+CacheDirectoryMode=0700
+# systemd 249 reapplies RuntimeDirectory User/Group ownership after command
+# hooks, which breaks the two deliberately different consumer groups. Create
+# these root-namespaced handoff directories explicitly with setgid inheritance.
+ExecStartPre=+/usr/bin/install -d -o letyclaw-browser -g letyclaw -m 2750 /run/letyclaw-browser
+ExecStartPre=+/usr/bin/install -d -o letyclaw-browser -g letyclaw-browser-proxy -m 2750 /run/letyclaw-browser-socket
+ExecStartPre=+/bin/rm -f /run/letyclaw-browser/ready
+ExecStartPre=+/bin/rm -f /run/letyclaw-browser-socket/gateway.sock
+UMask=0007
 
-# Sandboxing
-BindPaths=/opt/letyclaw/vault
-ReadWritePaths=/home/letyclaw/.cache /home/letyclaw/.npm
+# Browser identity can access only its profile/cache plus the two explicit
+# exchange directories. It cannot read the rest of the Obsidian vault or the
+# letyclaw bot's environment/profile, even if a renderer is compromised.
+TemporaryFileSystem=/root
+BindReadOnlyPaths=/root/vault/browser-uploads
+BindPaths=/root/vault/browser-artifacts /var/lib/letyclaw-browser/staged-uploads:/root/vault/.browser-staged-uploads
+ProtectSystem=strict
 PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# Chromium needs public internet and the local systemd-resolved stub, but not
+# cloud metadata, container bridges, VPN/LAN hosts, or IPv6 link-local/ULA.
+IPAddressDeny=10.0.0.0/8
+IPAddressDeny=100.64.0.0/10
+IPAddressDeny=169.254.0.0/16
+IPAddressDeny=172.16.0.0/12
+IPAddressDeny=192.168.0.0/16
+IPAddressDeny=fc00::/7
+IPAddressDeny=fe80::/10
+IPAddressDeny=localhost
+IPAddressAllow=127.0.0.53/32
+SystemCallArchitectures=native
+MemoryMax=2G
+TasksMax=256
 
 [Install]
 WantedBy=multi-user.target

@@ -1,18 +1,58 @@
 [Unit]
-Description=Letyclaw Voice Relay (Twilio ConversationRelay <-> Claude API)
-After=network.target
+Description=Letyclaw Voice Relay (optional Twilio ConversationRelay <-> Claude API)
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
-User=root
-WorkingDirectory=/opt/letyclaw
-ExecStart=node dist/services/voice-relay.js
-Restart=always
+User=letyclaw
+Group=letyclaw
+WorkingDirectory=/tmp
+ExecStartPre=+/usr/bin/env VOICE_LEGACY_DB_PATH=/root/letyclaw/voice-calls.sqlite VOICE_DB_PATH=/var/lib/letyclaw-voice/voice-calls.sqlite /usr/bin/node /root/letyclaw/dist/scripts/migrate-voice-db.js
+ExecStartPre=+/usr/bin/chown -R letyclaw:letyclaw /var/lib/letyclaw-voice
+ExecStart=/usr/bin/env VOICE_RELAY_HOST=127.0.0.1 VOICE_DB_PATH=/var/lib/letyclaw-voice/voice-calls.sqlite /usr/bin/node /root/letyclaw/dist/services/voice-relay.js
+Restart=on-failure
 RestartSec=10
 Environment=NODE_ENV=production
-Environment=HOME=/root
+Environment=HOME=/tmp
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
-EnvironmentFile=/opt/letyclaw/.env
+EnvironmentFile=/etc/letyclaw-voice-relay/env
+
+# Keep mutable call state out of the source checkout. systemd creates this
+# directory before dropping privileges and grants it only to the service user.
+StateDirectory=letyclaw-voice
+StateDirectoryMode=0700
+UMask=0077
+
+# Expose only the executable code/runtime under /root; all mutable state lives
+# in StateDirectory. The relay needs outbound HTTPS plus local proxy traffic,
+# so it deliberately does not use PrivateNetwork.
+TemporaryFileSystem=/root
+InaccessiblePaths=/home
+BindReadOnlyPaths=/root/letyclaw/dist /root/letyclaw/node_modules -/root/letyclaw/voice-calls.sqlite -/root/letyclaw/voice-calls.sqlite-wal -/root/letyclaw/voice-calls.sqlite-shm
+ProtectSystem=strict
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+LockPersonality=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+MemoryMax=768M
+TasksMax=128
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target

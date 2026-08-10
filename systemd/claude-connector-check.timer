@@ -1,0 +1,11 @@
+[Unit]
+Description=Probe Claude connector credential and Calendar hourly
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+RandomizedDelaySec=180
+Unit=claude-connector-check.service
+
+[Install]
+WantedBy=timers.target

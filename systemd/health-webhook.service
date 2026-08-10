@@ -1,15 +1,56 @@
 [Unit]
 Description=Letyclaw Health Data Webhook
-After=network.target
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
-User=root
-WorkingDirectory=/opt/letyclaw
-ExecStart=node dist/services/health-webhook.js
-EnvironmentFile=/opt/letyclaw/.env
-Restart=always
+User=letyclaw-webhook
+Group=letyclaw
+WorkingDirectory=/tmp
+ExecStart=/usr/bin/node /root/letyclaw/dist/services/health-webhook.js
+EnvironmentFile=/etc/letyclaw-health-webhook/env
+Environment=HOME=/tmp
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=VAPI_EVENT_DIR=/var/lib/letyclaw-vapi/events
+Environment=VAPI_INBOUND_CONTEXT_DIR=/var/lib/letyclaw-vapi/inbound-context
+StateDirectory=letyclaw-vapi
+StateDirectoryMode=0770
+Restart=on-failure
 RestartSec=5
+UMask=0007
+
+# The webhook needs only its compiled service, one writable health-data
+# directory, and the narrowly shared StateDirectory used for Vapi event/context
+# handoff. The shared repo .env, sessions, and browser/connector credentials are
+# not visible inside this mount namespace.
+TemporaryFileSystem=/root
+InaccessiblePaths=/home
+BindReadOnlyPaths=/root/letyclaw/dist
+BindPaths=/root/vault/health/daily-data
+ProtectSystem=strict
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+LockPersonality=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+MemoryMax=256M
+TasksMax=64
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target

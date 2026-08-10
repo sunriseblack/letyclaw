@@ -1,0 +1,34 @@
+[Unit]
+Description=Letyclaw browser MCP Unix-socket proxy worker
+Requires=playwright-mcp.service playwright-mcp-proxy.socket
+After=playwright-mcp.service playwright-mcp-proxy.socket
+BindsTo=playwright-mcp.service
+
+[Service]
+Type=simple
+User=letyclaw-browser-proxy
+Group=letyclaw-browser-proxy
+ExecStart=/lib/systemd/systemd-socket-proxyd --connections-max=128 /run/letyclaw-browser-socket/gateway.sock
+PrivateNetwork=true
+RestrictAddressFamilies=AF_UNIX
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+MemoryMax=128M
+TasksMax=64
