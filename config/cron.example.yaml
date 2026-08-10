@@ -1,12 +1,47 @@
-# Cron jobs — copy to cron.yaml and customize
+# Cron jobs — copy to cron.yaml and customize. Examples stay disabled until
+# you intentionally enable them.
 cron:
   timezone: "UTC"
-  jobs: []
-  # Example:
-  # - id: "morning-briefing"
-  #   schedule: "0 8 * * *"
-  #   agent: "personal"
-  #   topicId: 2
-  #   prompt: "Give me a morning briefing"
-  #   maxTurns: 10
-  #   enabled: true
+  jobs:
+    - id: "example-morning-briefing"
+      name: "Example morning briefing"
+      schedule: "0 8 * * *"
+      agent: "personal"
+      topicId: 2
+      delivery: "signal"
+      prompt: |
+        Review current priorities using memory tools and return a concise
+        morning briefing as the final response.
+      maxTurns: 10
+      expectsTools: true
+      enabledToolsets: ["memory", "sessions"]
+      disabledToolsets: ["voice"]
+      disabledTools: ["message_send", "message_typing"]
+      runNow: false
+      enabled: false
+
+    - id: "example-memory-maintenance"
+      name: "Example silent memory maintenance"
+      schedule: "30 23 * * *"
+      agent: "personal"
+      topicId: 2
+      delivery: "silent"
+      prompt: "Review today's durable facts, save any useful memory, then respond [SKIP]."
+      maxTurns: 10
+      enabledToolsets: ["memory", "sessions"]
+      enabled: false
+
+    - id: "example-reminder"
+      name: "Example opt-in reminder"
+      schedule: "0 9 * * 1"
+      agent: "personal"
+      topicId: 2
+      delivery: "nudge"
+      prompt: "Return a short reminder."
+      maxTurns: 5
+      enabled: false
+
+  # Optional job fields:
+  # expiresAt: "2030-01-01T00:00:00Z"
+  # precheck: "node /root/letyclaw/dist/scripts/cron-precheck.js personal 2"
+  # skills: ["your-skill-name"]

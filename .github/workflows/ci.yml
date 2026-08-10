@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build:check
+      - run: npm test
+      - name: Validate shell scripts
+        run: |
+          find scripts -maxdepth 1 -type f -name '*.sh' -print0 |
+            xargs -0 -n1 bash -n

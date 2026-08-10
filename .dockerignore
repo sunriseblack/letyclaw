@@ -1,0 +1,26 @@
+.git
+.github
+node_modules
+dist
+
+# Local secrets and state never enter the build context
+.env
+.env.*
+!.env.example
+*.secret
+config/letyclaw.yaml
+config/cron.yaml
+agents/unified
+vault
+sessions
+logs
+*.sqlite
+*.sqlite-*
+*.tar.gz
+
+# Local/editor files
+.DS_Store
+Thumbs.db
+.idea
+.vscode
+.claude/settings.local.json

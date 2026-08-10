@@ -22,9 +22,15 @@ vault/
 # Backups
 *.tar.gz
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Runtime logs
 logs/
+
+# Runtime state (per installation)
+sessions/
+*.sqlite
+*.sqlite-*
 
 # TypeScript build output
 dist/
@@ -33,3 +39,6 @@ dist/
 # User config (only .example.yaml files are committed)
 config/letyclaw.yaml
 config/cron.yaml
+
+# Generated instructions can contain owner/domain-specific facts
+agents/unified/

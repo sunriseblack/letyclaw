@@ -8,6 +8,7 @@ export interface MCPTextContent {
 export interface MCPResponse {
   [key: string]: unknown;
   content: MCPTextContent[];
+  structuredContent?: Record<string, unknown>;
   isError?: true;
 }
 

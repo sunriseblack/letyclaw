@@ -1,27 +1,38 @@
 [Unit]
 Description=Letyclaw Telegram Bot
-After=network.target
+After=network.target obsidian-sync.service
 
 [Service]
 Type=simple
 User=letyclaw
-WorkingDirectory=/opt/letyclaw
+WorkingDirectory=/root/letyclaw
 
 # Secrets loaded from restricted file (mode 600, root-owned)
-EnvironmentFile=/etc/letyclaw/env
-Environment=PATH=/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/etc/letyclaw-bot/env
+Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=CLAUDE_PATH=/usr/bin/claude
+Environment=RCLONE_CONFIG=/root/.config/rclone/rclone.conf
+Environment=VAPI_EVENT_DIR=/var/lib/letyclaw-vapi/events
+Environment=VAPI_INBOUND_CONTEXT_DIR=/var/lib/letyclaw-vapi/inbound-context
+StateDirectory=letyclaw-vapi
+StateDirectoryMode=0770
 
-# Ensure letyclaw owns vault workspaces
-ExecStartPre=+/usr/bin/find /opt/letyclaw/vault -not -user letyclaw -exec chown letyclaw:letyclaw {} +
-
-ExecStart=node dist/bot.js
+ExecStart=/usr/bin/node dist/bot.js
 Restart=always
 RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=630
 
-# Filesystem sandboxing
+# Filesystem sandboxing — only letyclaw perimeter is accessible
+# Hide everything under /root, then expose only what's needed
+# /root/letyclaw/config is RW so agents can self-schedule via cron_create (writes
+# cron.yaml). The more-specific bind overrides the parent /root/letyclaw RO mount.
 TemporaryFileSystem=/root
-BindPaths=/opt/letyclaw/vault /opt/letyclaw/sessions /opt/letyclaw/logs
-BindReadOnlyPaths=/opt/letyclaw
+BindPaths=/root/vault /root/letyclaw/sessions /root/letyclaw/logs /root/letyclaw/config /var/lib/letyclaw-vapi
+BindReadOnlyPaths=/root/letyclaw -/root/.local -/root/.config/rclone
+# Claude may write domain artifacts and memory, but it must never rewrite the
+# shared/system instructions or skill packages that future turns will trust.
+BindReadOnlyPaths=/root/vault/CLAUDE.md /root/vault/TOOLS.md -/root/vault/.letyclaw -/root/vault/.claude
 ReadWritePaths=/home/letyclaw/.claude
 PrivateTmp=true
 NoNewPrivileges=true

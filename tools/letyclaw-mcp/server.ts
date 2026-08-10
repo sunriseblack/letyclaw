@@ -2,17 +2,26 @@
 /**
  * letyclaw-tools MCP Server
  *
- * Custom tool server for letyclaw that provides 30+ tools
- * to Claude CLI via the Model Context Protocol (MCP).
+ * Custom tool server for letyclaw-bot that provides a suite of OpenClaw-equivalent
+ * tools to Claude CLI via the Model Context Protocol (MCP). The authoritative
+ * count is logged at startup (allDefinitions.length); the per-module figures
+ * below are a guide, not a contract.
  *
- * Tools are organized into 8 modules:
- *   Memory (5)    — BM25 search, CRUD over agent memory files
- *   Sessions (7)  — List, inspect, spawn sub-agents, manage conversations
- *   Messaging (6) — Rich Telegram messaging (buttons, polls, reactions)
- *   Cron (3)      — Agent self-scheduling via cron.yaml
+ * Tools are organized into focused modules:
+ *   Memory (6)    — BM25 search, CRUD over agent memory files
+ *   Sessions (10) — List, inspect, search logs, spawn sub-agents, manage conversations
+ *   Messaging (7) — Rich Telegram messaging (buttons, polls, reactions, file/document send)
+ *   Cron (7)      — Agent self-scheduling via cron.yaml
  *   Media (3)     — Image processing, DALL-E generation, TTS
  *   Voice (2)     — AI-powered phone calls via Vapi (Deepgram STT + Claude + TTS)
  *   Extras (6)    — Devices, canvas, agent context
+ *   GDrive (4)    — Google Drive access via configured rclone remotes
+ *   TickTick (7)  — Task tracker CRUD via TickTick Open API (OAuth2)
+ *   Gmail (7)     — Send/draft mail via Gmail API (bypasses blocked SMTP on droplet)
+ *   Loops (6)     — Open-loops ledger: durable, updatable "what's pending" state (+ TickTick mirror)
+ *   Connectors (1)— Authenticated Claude connector execution
+ *   Browser (1)   — Protected Playwright credential-alias discovery
+ *   Skills (2)    — Progressive catalog + complete on-demand skill reads
  *
  * Environment variables (passed from bot.js via Claude CLI):
  *   LETYCLAW_AGENT_ID        — Current agent identifier
@@ -20,12 +29,13 @@
  *   LETYCLAW_VAULT_PATH      — Path to vault (agent workspaces)
  *   LETYCLAW_SESSIONS_DIR    — Path to session files
  *   LETYCLAW_CHAT_ID         — Telegram chat/group ID
- *   LETYCLAW_PROJECT_ROOT    — Path to letyclaw project root
- *   TELEGRAM_BOT_TOKEN       — Telegram bot token (for messaging tools)
- *   OPENAI_API_KEY           — OpenAI API key (for image_generate, tts)
- *   VAPI_API_KEY             — Vapi API key (for voice_call)
- *   VAPI_PHONE_NUMBER_ID     — Vapi phone number ID (for voice_call)
- *   VAPI_ASSISTANT_ID        — Vapi assistant ID (for voice_call)
+ *   LETYCLAW_PROJECT_ROOT    — Path to letyclaw-bot project root
+ *   LETYCLAW_SKILLS          — JSON array of skills enabled for this run
+ *   TELEGRAM_BOT_TOKEN   — Telegram bot token (for messaging tools)
+ *   OPENAI_API_KEY       — OpenAI API key (for image_generate, tts)
+ *   VAPI_API_KEY         — Vapi API key (for voice_call)
+ *   VAPI_PHONE_NUMBER_ID — Vapi phone number ID (for voice_call)
+ *   VAPI_ASSISTANT_ID    — Vapi assistant ID (for voice_call)
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -44,6 +54,13 @@ import { definitions as cronDefs, handlers as cronHandlers } from "./tools/cron.
 import { definitions as mediaDefs, handlers as mediaHandlers } from "./tools/media.js";
 import { definitions as extrasDefs, handlers as extrasHandlers } from "./tools/extras.js";
 import { definitions as voiceDefs, handlers as voiceHandlers } from "./tools/voice.js";
+import { definitions as gdriveDefs, handlers as gdriveHandlers } from "./tools/gdrive.js";
+import { definitions as ticktickDefs, handlers as ticktickHandlers } from "./tools/ticktick.js";
+import { definitions as gmailDefs, handlers as gmailHandlers } from "./tools/gmail.js";
+import { definitions as loopsDefs, handlers as loopsHandlers } from "./tools/loops.js";
+import { definitions as connectorDefs, handlers as connectorHandlers } from "./tools/connectors.js";
+import { definitions as browserDefs, handlers as browserHandlers } from "./tools/browser.js";
+import { definitions as skillDefs, handlers as skillHandlers } from "./tools/skills.js";
 
 // ── Merge all definitions and handlers ────────────────────────────────
 
@@ -55,6 +72,13 @@ const allDefinitions: MCPToolDefinition[] = [
   ...mediaDefs,
   ...extrasDefs,
   ...voiceDefs,
+  ...gdriveDefs,
+  ...ticktickDefs,
+  ...gmailDefs,
+  ...loopsDefs,
+  ...connectorDefs,
+  ...browserDefs,
+  ...skillDefs,
 ];
 
 const allHandlers: Record<string, MCPHandler> = {
@@ -65,6 +89,13 @@ const allHandlers: Record<string, MCPHandler> = {
   ...mediaHandlers,
   ...extrasHandlers,
   ...voiceHandlers,
+  ...gdriveHandlers,
+  ...ticktickHandlers,
+  ...gmailHandlers,
+  ...loopsHandlers,
+  ...connectorHandlers,
+  ...browserHandlers,
+  ...skillHandlers,
 };
 
 // ── Create MCP Server ─────────────────────────────────────────────────

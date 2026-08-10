@@ -8,9 +8,10 @@
 import { writeFileSync, existsSync } from "fs";
 import { spawn } from "child_process";
 import type { MCPToolDefinition, MCPHandler, MCPResponse } from "../types.js";
-import { ok, error } from "./_util.js";
+import { ok, error, VAULT, safeAbsPath, billableRateLimitError } from "./_util.js";
 
 const OPENAI_KEY = (): string => process.env.OPENAI_API_KEY || "";
+const ALLOWED_MEDIA_DIRS = (): string[] => [VAULT(), "/tmp", process.env.LETYCLAW_PROJECT_ROOT || "/root/letyclaw"];
 
 // ── Tool definitions ──────────────────────────────────────────────────
 
@@ -98,6 +99,8 @@ export const handlers: Record<string, MCPHandler> = {
     const format = args.format as string | undefined;
     const quality = (args.quality as number | undefined) ?? 80;
 
+    if (!safeAbsPath(input_path, ALLOWED_MEDIA_DIRS())) return error("input_path is outside allowed directories");
+    if (output_path && !safeAbsPath(output_path, ALLOWED_MEDIA_DIRS())) return error("output_path is outside allowed directories");
     if (!existsSync(input_path)) return error(`File not found: ${input_path}`);
 
     switch (operation) {
@@ -153,9 +156,14 @@ export const handlers: Record<string, MCPHandler> = {
     const size = (args.size as string | undefined) ?? "1024x1024";
     const quality = (args.quality as string | undefined) ?? "standard";
     const save_path = args.save_path as string | undefined;
+    if (save_path && !safeAbsPath(save_path, ALLOWED_MEDIA_DIRS())) return error("save_path is outside allowed directories");
 
     const apiKey = OPENAI_KEY();
     if (!apiKey) return error("OPENAI_API_KEY not set. Set it to use DALL-E image generation.");
+
+    // Cost guard (DALL-E billed per image): 20 / 30 min across runs.
+    const rl = billableRateLimitError("image_generate", 20, 30 * 60_000);
+    if (rl) return rl;
 
     try {
       const res = await fetch("https://api.openai.com/v1/images/generations", {
@@ -218,7 +226,12 @@ export const handlers: Record<string, MCPHandler> = {
     if (!text) return error("text is required");
     if (text.length > 4096) return error("Text too long (max 4096 chars)");
 
+    // Cost guard (OpenAI TTS billed per char): 30 / 30 min across runs.
+    const rl = billableRateLimitError("tts", 30, 30 * 60_000);
+    if (rl) return rl;
+
     const outPath = output_path || `/tmp/tts-${Date.now()}.mp3`;
+    if (!safeAbsPath(outPath, ALLOWED_MEDIA_DIRS())) return error("output_path is outside allowed directories");
 
     try {
       const res = await fetch("https://api.openai.com/v1/audio/speech", {

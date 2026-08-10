@@ -1,7 +1,41 @@
 [Unit]
-Description=Daily Vault Backup
+Description=Encrypted daily Letyclaw vault backup
+Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=oneshot
 User=root
-ExecStart=/opt/letyclaw/scripts/vault-backup.sh
+EnvironmentFile=-/etc/letyclaw-backup/env
+Environment=BACKUP_STATE_DIR=/var/lib/letyclaw-vault-backup
+Environment=RCLONE_CONFIG=/var/lib/letyclaw-vault-backup/rclone.conf
+Environment=RCLONE_CONFIG_SOURCE=/root/.config/rclone/rclone.conf
+Environment=BACKUP_RCLONE_DEST=gdrive:letyclaw-backups/vault
+Environment=BACKUP_ENCRYPTION=gpg
+Environment=BACKUP_GPG_HOMEDIR=/etc/letyclaw-backup/gnupg
+Environment=BACKUP_LOCK_FILE=/run/letyclaw-vault-backup/lock
+ExecStartPre=/root/letyclaw/scripts/vault-backup.sh --check-config
+ExecStart=/root/letyclaw/scripts/vault-backup.sh
+RuntimeDirectory=letyclaw-vault-backup
+RuntimeDirectoryMode=0700
+StateDirectory=letyclaw-vault-backup
+StateDirectoryMode=0700
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=2h
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadOnlyPaths=/root/vault /root/.config/rclone -/etc/letyclaw-backup
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true

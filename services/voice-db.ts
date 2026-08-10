@@ -12,7 +12,7 @@ import type { Database as DatabaseType } from "better-sqlite3";
 import { mkdirSync } from "fs";
 import { dirname } from "path";
 
-const DEFAULT_DB_PATH = "/opt/letyclaw/voice-calls.sqlite";
+const DEFAULT_DB_PATH = "/var/lib/letyclaw-voice/voice-calls.sqlite";
 
 // ── Interfaces ─────────────────────────────────────────────────────
 
@@ -117,6 +117,11 @@ export function createCall({ callSid, phoneNumber, task, systemPrompt, model, ag
   );
 }
 
+const ALLOWED_EXTRA_COLUMNS = new Set([
+  "connected_at", "completed_at", "duration_seconds", "error", "summary",
+  "model", "voice", "language", "max_duration_seconds",
+]);
+
 export function updateCallStatus(callSid: string, status: string, extra: Record<string, string | number> = {}): void {
   const db = getDb();
   const sets: string[] = ["status = ?"];
@@ -131,9 +136,10 @@ export function updateCallStatus(callSid: string, status: string, extra: Record<
     vals.push(Date.now());
   }
 
-  const ALLOWED_COLUMNS = new Set(["duration_seconds", "connected_at", "completed_at", "error", "summary"]);
   for (const [key, val] of Object.entries(extra)) {
-    if (!ALLOWED_COLUMNS.has(key)) continue;
+    if (!ALLOWED_EXTRA_COLUMNS.has(key)) {
+      throw new Error(`updateCallStatus: invalid column name '${key}'`);
+    }
     sets.push(`${key} = ?`);
     vals.push(val);
   }
@@ -144,8 +150,8 @@ export function updateCallStatus(callSid: string, status: string, extra: Record<
 
 export function appendTranscript(callSid: string, speaker: string, text: string): void {
   const db = getDb();
-  const line = `[${speaker}]: ${text}\n`;
-  db.prepare("UPDATE calls SET transcript = transcript || ? WHERE call_sid = ?").run(line, callSid);
+  const entry = `[${speaker}]: ${text}\n`;
+  db.prepare("UPDATE calls SET transcript = transcript || ? WHERE call_sid = ?").run(entry, callSid);
 }
 
 export function getCall(callSid: string): CallRow | null {

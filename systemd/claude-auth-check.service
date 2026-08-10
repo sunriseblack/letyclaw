@@ -1,0 +1,17 @@
+[Unit]
+Description=Claude CLI auth health probe (journal-only)
+After=network.target
+
+[Service]
+Type=oneshot
+User=letyclaw
+Group=letyclaw
+WorkingDirectory=/root/letyclaw
+# The probe needs the same Claude credential as the bot. Strip messaging values
+# after loading the shared file so this service cannot become a notification path.
+EnvironmentFile=/etc/letyclaw-bot/env
+UnsetEnvironment=TELEGRAM_BOT_TOKEN TELEGRAM_GROUP_ID CLAUDE_AUTH_ALERT_TOPIC
+Environment=LETYCLAW_PROJECT_ROOT=/root/letyclaw
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=CLAUDE_PATH=/usr/bin/claude
+ExecStart=/usr/bin/node /root/letyclaw/dist/scripts/check-claude-auth.js

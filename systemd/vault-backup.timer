@@ -1,9 +1,12 @@
 [Unit]
-Description=Run vault backup daily at 3am
+Description=Run encrypted vault backup daily at 3am UTC
 
 [Timer]
 OnCalendar=*-*-* 03:00:00
 Persistent=true
+AccuracySec=5m
+RandomizedDelaySec=10m
+Unit=vault-backup.service
 
 [Install]
 WantedBy=timers.target

@@ -1,0 +1,36 @@
+[Unit]
+Description=Claude connector credential and read-only Google Calendar probe
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=letyclaw
+Group=letyclaw
+WorkingDirectory=/tmp
+# Never expose the healthy bot setup token/API-key overrides to the monitor
+# process itself; otherwise a future probe regression could mask connector auth.
+UnsetEnvironment=CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CONFIG_DIR
+Environment=LETYCLAW_PROJECT_ROOT=/root/letyclaw
+Environment=CONNECTOR_CLAUDE_HOME=/root/letyclaw/sessions/connector-home
+Environment=HOME=/tmp
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=CONNECTOR_CLAUDE_PATH=/usr/bin/claude
+ExecStart=/usr/bin/node /root/letyclaw/dist/scripts/check-connector-health.js
+TimeoutStartSec=120
+
+# Only the probe state and connector credential store are writable. The CLI may
+# rotate its connector access token during a successful real-inference probe.
+TemporaryFileSystem=/root
+InaccessiblePaths=/home
+BindReadOnlyPaths=/root/letyclaw/dist
+BindPaths=/root/letyclaw/logs /root/letyclaw/sessions/connector-home
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectKernelLogs=true
+ProtectClock=true
+RestrictSUIDSGID=true
